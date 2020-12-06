@@ -1,0 +1,16 @@
+#!/bin/sh
+
+unzip -q src/ass1.zip 'initial/**'
+
+cp dist/BKIT.g4 initial/src/main/bkit/parser/BKIT.g4
+cp dist/LexerSuite.py initial/src/test/LexerSuite.py
+cp dist/ParserSuite.py initial/src/test/ParserSuite.py
+
+cd initial/src/ || exit
+
+ANTLR_JAR="$OLDPWD"/antlr-4.8-complete.jar python run.py gen
+python run.py test LexerSuite
+python run.py test ParserSuite
+
+cd "$OLDPWD" || exit
+rm -r initial/

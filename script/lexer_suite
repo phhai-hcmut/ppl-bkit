@@ -1,0 +1,30 @@
+#!/usr/bin/awk -f
+
+BEGIN {
+	start = 0
+	count = 100
+	print "import unittest"
+	print ""
+	print "from TestUtils import TestLexer"
+	print ""
+	print ""
+	print "class LexerSuite(unittest.TestCase):"
+}
+
+/^##/ {
+	start = 1
+	next
+}
+
+$0 ~ /^class/ {
+	next
+}
+
+start == 1 && $0 ~ /^ {8}self\.check_lexeme/ {
+	sub("check_lexeme", "assertTrue(TestLexer.checkLexeme")
+	sub(/\)$/, ", " count++ "))")
+}
+
+start == 1 {
+	print $0
+}
