@@ -1,0 +1,39 @@
+#!/usr/bin/awk -f
+
+BEGIN {
+	start = 0
+	count = 300
+	visited_class = 0
+	print "import unittest"
+	print "from TestUtils import TestAST"
+	print "from AST import *"
+	print ""
+	print ""
+}
+
+/^##/ {
+	start = 1
+	next
+}
+
+start == 0 {
+	next
+}
+
+$0 ~ /^class/ {
+	if (visited_class) {
+		next
+	} else {
+		$0 = "class ASTGenSuite(unittest.TestCase):"
+		visited_class = 1
+	}
+}
+
+$0 ~ /^ {8}self\.check_astgen/ {
+	sub("check_astgen", "assertTrue(TestAST.checkASTGen")
+	sub(/\)$/, ", " count++ "))")
+}
+
+{
+	print $0
+}

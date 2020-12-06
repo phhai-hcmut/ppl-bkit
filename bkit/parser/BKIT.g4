@@ -30,15 +30,19 @@ options { language=Python3; }
 /*
  * Parser rules
  */
-program : var_decl_stmt* func_decl* ;
+program : var_decl_part func_decl* ;
 
-func_decl : FUNCTION ':' ID func_params? func_body ;
+func_decl : FUNCTION ':' ident func_params? func_body ;
 
-func_params : PARAMETER ':' ID (',' ID)* ;
+func_params : PARAMETER ':' param (',' param)* ;
+
+param : declarator ;
 
 func_body : BODY ':' stmt_list END_BODY '.' ;
 
-stmt_list : var_decl_stmt* other_stmt* ;
+stmt_list : var_decl_part other_stmt* ;
+
+var_decl_part : var_decl_stmt* ;
 
 other_stmt
 	: assign_stmt
@@ -56,16 +60,18 @@ var_decl_stmt : VAR ':' var_decl (',' var_decl)* ';' ;
 
 var_decl : declarator ('=' literal)?  ;
 
-declarator : ID ('[' integer ']')* ;
+declarator : ident ('[' integer ']')* ;
 
-assign_stmt : (ID | elem_expr) '=' expr ';' ;
+assign_stmt : lhs '=' expr ';' ;
 
-if_stmt : IF expr THEN stmt_list elif_clause* else_clause? END_IF '.' ;
-elif_clause : ELSE_IF expr THEN stmt_list ;
-else_clause : ELSE stmt_list ;
+lhs : ident | elem_expr ;
+
+if_stmt : IF if_then_stmt (ELSE_IF if_then_stmt)* else_stmt? END_IF '.' ;
+if_then_stmt : expr THEN stmt_list ;
+else_stmt : ELSE stmt_list ;
 
 for_stmt : FOR '(' for_cond ')' DO stmt_list END_FOR '.' ;
-for_cond : ID '=' expr ',' expr ',' expr ;
+for_cond : ident '=' expr ',' expr ',' expr ;
 
 while_stmt : WHILE expr DO stmt_list END_WHILE '.' ;
 
@@ -79,27 +85,28 @@ call_stmt : func_call ';' ;
 
 return_stmt : RETURN expr? ';' ;
 
-func_call : ID '(' arg_list? ')' ;
+func_call : ident '(' arg_list? ')' ;
 
 arg_list : expr (',' expr)* ;
 
-expr : exprp rel_op exprp | exprp ;
+expr : exprp rel_op exprp #rel_expr | exprp #non_rel_expr ;
 
 exprp
-	: literal
-	| ID
-	| '(' exprp ')'
-	| func_call
-	| elem_expr
-	| prefix_op exprp
-	| exprp mul_op exprp
-	| exprp add_op exprp
-	| exprp logical_op exprp
+	: primary_expr #other_expr
+	| elem_expr #other_expr
+	| prefix_op exprp #prefix_expr
+	| exprp mul_op exprp #binary_expr
+	| exprp add_op exprp #binary_expr
+	| exprp logical_op exprp #binary_expr
 	;
 
-elem_expr : (ID | func_call) idx_op ;
+elem_expr :  primary_expr ('[' expr ']')+ ;
 
-idx_op : ('[' expr ']')+ ;
+primary_expr : paren_expr | literal | ident | call_expr ;
+
+paren_expr : '(' expr ')' ;
+
+call_expr : func_call ;
 
 prefix_op : NOT | INT_MINUS | FLOAT_MINUS ;
 
@@ -136,13 +143,18 @@ rel_op
 	| FLOAT_GEQ
 	;
 
-literal : integer | FLOAT | boolean | STRING | array_literal ;
+ident : ID ;
 
-array_literal : '{' literal (',' literal)* '}' ;
+literal
+	: integer #integer_literal
+	| FLOAT #float_literal
+	| TRUE #true_literal
+	| FALSE #false_literal
+	| STRING #string_literal
+	| '{' literal (',' literal)* '}' #array_literal
+	;
 
-integer : DEC_INT | HEX_INT | OCT_INT ;
-
-boolean : TRUE | FALSE ;
+integer : DEC_INT #decimal | HEX_INT #hex | OCT_INT #octal ;
 
 /*
  * Lexer rules
