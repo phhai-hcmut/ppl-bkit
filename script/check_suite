@@ -1,0 +1,42 @@
+#!/usr/bin/awk -f
+
+BEGIN {
+	start = 0
+	count = 400
+	visited_class = 0
+	print "import unittest"
+	print ""
+	print "from AST import *"
+	print "from StaticError import *"
+	print ""
+	print "from TestUtils import TestChecker"
+	print ""
+	print ""
+}
+
+/^##/ {
+	start = 1
+	next
+}
+
+start == 0 {
+	next
+}
+
+$0 ~ /^class/ {
+	if (visited_class) {
+		next
+	} else {
+		$0 = "class CheckSuite(unittest.TestCase):"
+		visited_class = 1
+	}
+}
+
+$0 ~ /^ {8}self\.check_static/ {
+	sub("check_static", "assertTrue(TestChecker.test")
+	sub(/expect\)$/, "str(expect), " count++ "))")
+}
+
+{
+	print $0
+}

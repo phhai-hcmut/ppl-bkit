@@ -20,6 +20,9 @@ test_parser: ${ANTLR_BUILD}
 test_astgen: ${ANTLR_BUILD}
 	@python -m unittest -f test.test_astgen
 
+test_check:
+	@python -m unittest -f test.test_check
+
 java/BKIT.g4: bkit/parser/BKIT.g4
 	[ -d java ] || mkdir java
 	sed -E ' /@lexer/,/^}/ d; /^options/ d; /self\.test/ d; s/\bboolean\b/bool/g' $< >$@
@@ -38,6 +41,16 @@ dist_ass2:
 		-e 's/^from \.util\.ast/from AST/' \
 		bkit/astgen.py >dist/ASTGeneration.py
 	./script/astgen_suite test/test_astgen.py >dist/ASTGenSuite.py
+	./script/test_phung
+
+dist_ass3:
+	@[ -d dist ] || mkdir dist
+	sed 's/\.\.lexererr/lexererr/' bkit/parser/BKIT.g4 >dist/BKIT.g4
+	sed -e 's/^from \.\.utils\.ast/from AST/' \
+		-e 's/^from \.\.utils\.visitor/from Visitor/' \
+		-e 's/^from \.exceptions/from StaticError/' \
+		bkit/checker/static_check.py >dist/StaticCheck.py
+	./script/check_suite test/test_check.py >dist/CheckSuite.py
 	./script/test_phung
 
 .PHONY: all clean dist gen

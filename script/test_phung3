@@ -1,0 +1,14 @@
+#!/bin/sh
+
+unzip -q src/assignment3.zip 'initial/**'
+
+cp dist/CheckSuite.py initial/src/test/CheckSuite.py
+cp dist/StaticCheck.py initial/src/main/bkit/checker/StaticCheck.py
+
+cd initial/src/ || exit
+
+ANTLR_JAR="$OLDPWD"/antlr-4.8-complete.jar python run.py gen
+python run.py test CheckSuite
+
+cd "$OLDPWD" || exit
+rm -r initial/
