@@ -1,0 +1,22 @@
+#!/bin/sh
+set -x
+
+rm -rf initial/
+unzip -q src/assignment4.zip 'initial/**'
+
+cp dist/BKIT.g4 initial/src/main/bkit/parser/BKIT.g4
+cp dist/ASTGenSuite.py initial/src/test/ASTGenSuite.py
+cp dist/ASTGeneration.py initial/src/main/bkit/astgen/ASTGeneration.py
+
+cp dist/CodeGenSuite.py initial/src/test/
+cp dist/CodeGenerator.py dist/Emitter.py initial/src/main/bkit/codegen/
+
+cd initial/src/ || exit
+
+ANTLR_JAR="$OLDPWD"/antlr-4.8-complete.jar python run.py gen
+python run.py test CodeGenSuite
+cp "$OLDPWD"/long_test4.py test/CodeGenSuite.py
+python run.py test CodeGenSuite
+
+cd "$OLDPWD" || exit
+rm -rf initial/

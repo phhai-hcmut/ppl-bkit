@@ -1,0 +1,39 @@
+#!/usr/bin/awk -f
+
+BEGIN {
+	start = 0
+	count = 500
+	visited_class = 0
+	print "import unittest"
+	print ""
+	print "from TestUtils import TestCodeGen"
+	print ""
+	print ""
+}
+
+/^##/ {
+	start = 1
+	next
+}
+
+start == 0 {
+	next
+}
+
+$0 ~ /^class/ {
+	if (visited_class) {
+		next
+	} else {
+		$0 = "class CheckCodeGenSuite(unittest.TestCase):"
+		visited_class = 1
+	}
+}
+
+$0 ~ /^ {8}self\.check_codegen/ {
+	sub("check_codegen", "assertTrue(TestCodeGen.test")
+	sub(/\)$/, ", " count++ "))")
+}
+
+{
+	print $0
+}
