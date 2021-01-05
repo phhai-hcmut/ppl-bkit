@@ -6,7 +6,7 @@
 grammar BKIT;
 
 @lexer::header {
-from lexererr import *
+from ..lexererr import *
 }
 
 @lexer::members {
@@ -116,8 +116,6 @@ mul_op
 	| MODULO
 	| FLOAT_MUL
 	| FLOAT_DIV
-	| FLOAT_ADD
-	| FLOAT_MINUS
 	;
 
 add_op
