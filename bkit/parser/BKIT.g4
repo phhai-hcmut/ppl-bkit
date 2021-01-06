@@ -70,8 +70,7 @@ if_stmt : IF if_then_stmt (ELSE_IF if_then_stmt)* else_stmt? END_IF '.' ;
 if_then_stmt : expr THEN stmt_list ;
 else_stmt : ELSE stmt_list ;
 
-for_stmt : FOR '(' for_cond ')' DO stmt_list END_FOR '.' ;
-for_cond : ident '=' expr ',' expr ',' expr ;
+for_stmt : FOR '(' ident '=' expr ',' expr ',' expr ')' DO stmt_list END_FOR '.' ;
 
 while_stmt : WHILE expr DO stmt_list END_WHILE '.' ;
 
