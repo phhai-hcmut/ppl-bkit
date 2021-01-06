@@ -1,7 +1,17 @@
 """Jasmin code generator"""
 from dataclasses import dataclass, replace
 from itertools import chain, groupby
-from typing import ChainMap, Dict, Generator, Iterator, List, Union, Optional, cast
+from typing import (
+    ChainMap,
+    Dict,
+    Generator,
+    Iterable,
+    Iterator,
+    List,
+    Union,
+    Optional,
+    cast,
+)
 
 from ..utils.ast import *
 from ..utils.visitor import BaseVisitor
@@ -130,18 +140,20 @@ class CodeGenVisitor(BaseVisitor):
 
         # Since VarDecl always appear before FuncDecl,
         # it's OK to use groupby without sorting
-        decls = {key: list(group) for key, group in groupby(ast.decl, type)}
+        decl_groups = groupby(ast.decl, type)
 
-        if VarDecl in decls:
-            var_decls = cast(List[VarDecl], decls[VarDecl])
+        decl_type, decls = next(decl_groups)
+        if decl_type is VarDecl:
+            var_decls = cast(Iterator[VarDecl], decls)
             yield from self.gen_clinit(var_decls, global_symtab)
+            _, decls = next(decl_groups)
 
         yield from self.gen_init()
 
         global_symtab['main'] = Symbol(
             MType([ArrayType(STRING_TYPE, [0])], VOID_TYPE), self.CLASS_NAME
         )
-        func_decls = cast(List[FuncDecl], decls[FuncDecl])
+        func_decls = cast(Iterator[FuncDecl], decls)
         func_gens = {
             func_decl.name.name: self.visitFuncDecl(func_decl, global_symtab)
             for func_decl in func_decls
@@ -150,7 +162,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from self.gen_func_decls(entry_point, func_gens)
 
     def gen_clinit(
-        self, var_decls: List[VarDecl], symtab: Dict[str, Symbol]
+        self, var_decls: Iterable[VarDecl], symtab: Dict[str, Symbol]
     ) -> Iterator[str]:
         methodname = '<clinit>'
         methodtype = MType([], VOID_TYPE)
