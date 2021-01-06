@@ -1,137 +1,28 @@
 """
  * @author nhphung
 """
-from abc import ABC
 from collections import ChainMap
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 import typing
 from functools import reduce
-import logging
+
+# import logging
 
 from ..utils.ast import *
+from ..utils.type import *
 from ..utils.visitor import BaseVisitor
 from .exceptions import *
-
-
-class Type(ABC):
-    pass
-
-
-class Prim(Type):
-    """Primitive type"""
-
-    def __bool__(self):
-        return True
-
-
-@dataclass
-class IntType(Prim):
-    pass
-
-
-@dataclass
-class FloatType(Prim):
-    pass
-
-
-@dataclass
-class StringType(Prim):
-    pass
-
-
-@dataclass
-class BoolType(Prim):
-    pass
-
-
-@dataclass
-class VoidType(Type):
-    """Unit type"""
-
-    def __bool__(self):
-        return True
-
-    pass
-
-
-@dataclass(eq=False)
-class Unknown(Type):
-    """Unresolved type (monomorph)
-
-    A monomorph is a type which may, through unification, morph into a
-    different type later.
-    """
-
-    def __bool__(self):
-        return False
-
-
-@dataclass
-class ArrayType(Type):
-    dim: List[int]
-    elem_type: Prim
-
-    def __bool__(self):
-        return bool(self.elem_type)
-
-
-@dataclass
-class FuncType:
-    intype: List[Type]
-    restype: Type
-
-    def __bool__(self):
-        return not isinstance(self.intype, Unknown) and bool(self.restype)
-
-
-@dataclass
-class OpType:
-    """Operator type"""
-
-    op_type: Prim  # operand type
-    ret_type: Prim  # result type
-
-
-@dataclass
-class Symbol:
-    kind: Kind
-    type: Type
-
-
-BUILTIN_FUNCS = {
-    'int_of_float': FuncType([FloatType()], IntType()),
-    'float_to_int': FuncType([IntType()], FloatType()),
-    'int_of_string': FuncType([StringType()], IntType()),
-    'string_of_int': FuncType([IntType()], StringType()),
-    'float_of_string': FuncType([StringType()], FloatType()),
-    'string_of_float': FuncType([FloatType()], StringType()),
-    'bool_of_string': FuncType([StringType()], BoolType()),
-    'string_of_bool': FuncType([BoolType()], StringType()),
-    'read': FuncType([], StringType()),
-    'printLn': FuncType([], VoidType()),
-    'print': FuncType([StringType()], VoidType()),
-    'printStrLn': FuncType([StringType()], VoidType()),
-}
-
-BUILTIN_OPS = {
-    ('+', '-', '*', '\\', '%'): OpType(IntType(), IntType()),
-    ('+.', '-.', '*.', '\\.'): OpType(FloatType(), FloatType()),
-    ('!', '&&', '||'): OpType(BoolType(), BoolType()),
-    ('==', '!=', '<', '>', '<=', '>='): OpType(IntType(), BoolType()),
-    ('=/=', '<.', '>.', '<=.', '>=.'): OpType(FloatType(), BoolType()),
-}
 
 
 class Context(ChainMap):
     """A stack-like implementation of typing context"""
 
-    def __setitem__(self, name, type):
+    def __setitem__(self, name: str, type: Type):
         # When update type of a parameter,
         # also update type of the current function
         for scope in self.maps:
             if name in scope:
-                scope[name] = type
+                scope[name] = type  # type: ignore
                 if name in scope.get('Func_params', []):
                     param_idx = scope['Func_params'].index(name)
                     scope['Func_type'].intype[param_idx] = type
@@ -164,17 +55,42 @@ ExprParam = Tuple[Context, Optional[Type]]
 
 
 class StaticChecker(BaseVisitor):
+    BUILTIN_FUNCS = {
+        'int_of_float': FuncType([FLOAT_TYPE], INT_TYPE),
+        'float_to_int': FuncType([INT_TYPE], FLOAT_TYPE),
+        'int_of_string': FuncType([STRING_TYPE], INT_TYPE),
+        'string_of_int': FuncType([INT_TYPE], STRING_TYPE),
+        'float_of_string': FuncType([STRING_TYPE], FLOAT_TYPE),
+        'string_of_float': FuncType([FLOAT_TYPE], STRING_TYPE),
+        'bool_of_string': FuncType([STRING_TYPE], BOOL_TYPE),
+        'string_of_bool': FuncType([BOOL_TYPE], STRING_TYPE),
+        'read': FuncType([], STRING_TYPE),
+        'printLn': FuncType([], VOID_TYPE),
+        'print': FuncType([STRING_TYPE], VOID_TYPE),
+        'printStrLn': FuncType([STRING_TYPE], VOID_TYPE),
+    }
+
+    BUILTIN_OPS = {
+        ('+', '-', '*', '\\', '%'): OpType(INT_TYPE, INT_TYPE),
+        ('+.', '-.', '*.', '\\.'): OpType(FLOAT_TYPE, FLOAT_TYPE),
+        ('!', '&&', '||'): OpType(BOOL_TYPE, BOOL_TYPE),
+        ('==', '!=', '<', '>', '<=', '>='): OpType(INT_TYPE, BOOL_TYPE),
+        ('=/=', '<.', '>.', '<=.', '>=.'): OpType(FLOAT_TYPE, BOOL_TYPE),
+    }
+
     def __init__(self, ast: AST):
         self.ast = ast
         self.undecl_funcs: Dict[str, Union[CallExpr, CallStmt]] = {}
-        self.cur_stmt: Optional[Stmt] = None
-        self.logger = logging.getLogger(__name__)
+        self.cur_stmt: Stmt
+        # self.logger = logging.getLogger(__name__)
 
     def check(self):
         builtins = {
-            op: op_type for op_list, op_type in BUILTIN_OPS.items() for op in op_list
+            op: op_type
+            for op_list, op_type in self.BUILTIN_OPS.items()
+            for op in op_list
         }
-        builtins.update(BUILTIN_FUNCS)
+        builtins.update(self.BUILTIN_FUNCS)
         if isinstance(self.ast, Expr):
             c = (Context(builtins), None)
         else:
@@ -188,25 +104,30 @@ class StaticChecker(BaseVisitor):
         if isinstance(ast, Expr):
             raise TypeMismatchInExpression(ast)
 
-    def unify_type(
-        self, t1: Type, t2: Type, error_ast: Union[Expr, Stmt], prim: bool = True
-    ) -> Type:
+    def unify_type(self, t1: Type, t2: Type, error_ast: Union[Expr, Stmt]) -> Type:
         """Unify 2 type t1 and t2
 
         Raise type mismatch if unification is impossible.
         Raise Type infer error if some monomoprhs are not resolved
         """
-        self.logger.info("Unify %s and %s in context %s", t1, t2, error_ast)
-
+        # self.logger.info("Unify %s and %s in context %s", t1, t2, error_ast)
         if isinstance(t1, FuncType) or isinstance(t2, FuncType):
             self.raise_type_mismatch(error_ast)
 
-        if prim:
-            if isinstance(t1, ArrayType) and isinstance(t2, ArrayType):
-                if t1.dim != t2.dim:
-                    self.raise_type_mismatch(error_ast)
-            elif isinstance(t1, ArrayType) or isinstance(t2, ArrayType):
-                self.raise_type_mismatch(error_ast)
+        if isinstance(t1, ArrayType) and isinstance(t2, ArrayType) and t1.dim != t2.dim:
+            self.raise_type_mismatch(error_ast)
+
+        if (isinstance(t1, Prim) and isinstance(t2, ArrayType)) or (
+            isinstance(t1, ArrayType) and isinstance(t2, Prim)
+        ):
+            # Cannot unify scalar type and composite type
+            self.raise_type_mismatch(error_ast)
+
+        if (isinstance(t1, ArrayType) and isinstance(t2, Unknown) and t2.prim) or (
+            isinstance(t2, ArrayType) and isinstance(t1, Unknown) and t1.prim
+        ):
+            # Cannot unify scalar type and composite type
+            self.raise_type_mismatch(error_ast)
 
         if not t1 and not t2 and self.cur_stmt is not None:
             # Both types are unresolved
@@ -217,7 +138,11 @@ class StaticChecker(BaseVisitor):
         return t1 if t1 else t2
 
     def unify_expr_type(
-        self, expr: Expr, expected_type: Type, c: Context, error_ast: Union[Expr, Stmt]
+        self,
+        expr: Union[Expr, LHS],
+        expected_type: Type,
+        c: Context,
+        error_ast: Union[Expr, Stmt],
     ) -> Type:
         """Unify type of `expr` with `expected_type`
 
@@ -258,7 +183,7 @@ class StaticChecker(BaseVisitor):
             c.locals[name] = init_type
         else:
             if ast.varDimen:
-                c.locals[name] = ArrayType(ast.varDimen, Unknown())
+                c.locals[name] = ArrayType(Unknown(True), ast.varDimen)  # type: ignore
             else:
                 c.locals[name] = Unknown()
 
@@ -285,7 +210,7 @@ class StaticChecker(BaseVisitor):
                 raise Redeclared(Function(), name)
         else:
             # First declaration
-            func_type = FuncType([Unknown()] * len(ast.param), None)
+            func_type = FuncType([Unknown()] * len(ast.param), None)  # type: ignore
             c.globals[name] = func_type
 
         func_context = c.new_scope()
@@ -308,12 +233,6 @@ class StaticChecker(BaseVisitor):
         rhs_type = self.unify_expr_type(ast.rhs, lhs_type, c, ast)
         if isinstance(rhs_type, VoidType):
             self.raise_type_mismatch(ast)
-        # if lhs_type or rhs_type:
-        #     rhs_type = self.visit(ast.rhs, (c, lhs_type))
-        #     if lhs_type != rhs_type:
-        #         raise TypeMismatchInStatement(ast)
-        # else:
-        #     raise TypeCannotBeInferred(ast)
         self.unify_expr_type(ast.lhs, rhs_type, c, ast)
         return c
 
@@ -322,7 +241,7 @@ class StaticChecker(BaseVisitor):
 
         def visit_if_then_stmt(c, if_then_stmt):
             cond, var_decls, stmts = if_then_stmt
-            self.unify_expr_type(cond, BoolType(), c, ast)
+            self.unify_expr_type(cond, BOOL_TYPE, c, ast)
             return self.visit_stmt_list(var_decls, stmts, c)
 
         c = reduce(visit_if_then_stmt, ast.ifthenStmt, c)
@@ -331,27 +250,27 @@ class StaticChecker(BaseVisitor):
 
     def visitFor(self, ast: For, c: Context) -> Context:
         self.cur_stmt = ast
-        self.unify_expr_type(ast.idx1, IntType(), c, ast)
-        self.unify_expr_type(ast.expr1, IntType(), c, ast)
-        self.unify_expr_type(ast.expr2, BoolType(), c, ast)
-        self.unify_expr_type(ast.expr3, IntType(), c, ast)
+        self.unify_expr_type(ast.idx1, INT_TYPE, c, ast)
+        self.unify_expr_type(ast.expr1, INT_TYPE, c, ast)
+        self.unify_expr_type(ast.expr2, BOOL_TYPE, c, ast)
+        self.unify_expr_type(ast.expr3, INT_TYPE, c, ast)
         return self.visit_stmt_list(*ast.loop, c)
 
     def visitWhile(self, ast: While, c: Context) -> Context:
         self.cur_stmt = ast
-        self.unify_expr_type(ast.exp, BoolType(), c, ast)
+        self.unify_expr_type(ast.exp, BOOL_TYPE, c, ast)
         return self.visit_stmt_list(*ast.sl, c)
 
     def visitDowhile(self, ast: Dowhile, c: Context) -> Context:
         c = self.visit_stmt_list(*ast.sl, c)
         self.cur_stmt = ast
-        self.unify_expr_type(ast.exp, BoolType(), c, ast)
+        self.unify_expr_type(ast.exp, BOOL_TYPE, c, ast)
         return c
 
     def visitCallStmt(self, ast: CallStmt, c: Context) -> Context:
         self.cur_stmt = ast
-        ret_type = self.visit_func_call(ast, c, VoidType())
-        self.unify_type(ret_type, VoidType(), ast, False)
+        ret_type = self.visit_func_call(ast, c, VOID_TYPE)
+        self.unify_type(ret_type, VOID_TYPE, ast)
         return c
 
     def visit_stmt_list(
@@ -363,22 +282,18 @@ class StaticChecker(BaseVisitor):
     ) -> Context:
         if new_scope:
             c = c.new_scope()
-        c = reduce(self.visit_fold, var_decls + stmts, c)
-        self.cur_stmt = None
+        c = reduce(self.visit_fold, var_decls + stmts, c)  # type: ignore
         return c.nonlocals
 
     def visitReturn(self, ast: Return, c: Context) -> Context:
         self.cur_stmt = ast
         func_type = c['Func_type']
         if ast.expr is None:
-            expr_type = VoidType()
+            expr_type = VOID_TYPE
         else:
             expr_type = self.visit(ast.expr, (c, func_type.restype))
 
-        # if func_type.restype is None:
-        #     func_type.restype = expr_type
-        # else:
-        func_type.restype = self.unify_type(expr_type, func_type.restype, ast, False)
+        func_type.restype = self.unify_type(expr_type, func_type.restype, ast)
         return c
 
     def visitContinue(self, ast: Continue, c: Context) -> Context:
@@ -397,13 +312,13 @@ class StaticChecker(BaseVisitor):
         if not isinstance(arr_type, ArrayType) or len(arr_type.dim) != len(ast.idx):
             raise TypeMismatchInExpression(ast)
 
-        if isinstance(arr_type.elem_type, Unknown) and expected_type is not None:
+        if isinstance(arr_type.elem_type, Unknown) and isinstance(expected_type, Prim):
             # Infer type for element
             arr_type.elem_type = expected_type
 
         # Check type of index expressions
         for idx in ast.idx:
-            self.unify_expr_type(idx, IntType(), context, ast)
+            self.unify_expr_type(idx, INT_TYPE, context, ast)
 
         return arr_type.elem_type
 
@@ -419,7 +334,7 @@ class StaticChecker(BaseVisitor):
         if name not in c:
             if name not in self.undecl_funcs:
                 self.undecl_funcs[name] = ast
-            func_type = FuncType([Unknown()] * len(ast.param), None)
+            func_type = FuncType([Unknown()] * len(ast.param), None)  # type: ignore
             c[name] = func_type
         else:
             func_type = c[name]
@@ -445,6 +360,7 @@ class StaticChecker(BaseVisitor):
             old_param_type = func_type.intype[param_idx]
             arg_type = self.visit(arg, (c, old_param_type))
             param_type = func_type.intype[param_idx]
+            print(arg_type, param_type)
             param_type = self.unify_type(arg_type, param_type, ast)
             if not old_param_type and param_type:
                 self.visit(arg, (c, param_type))
@@ -486,10 +402,9 @@ class StaticChecker(BaseVisitor):
             raise Undeclared(Identifier(), ast.name)
 
         id_type = context[ast.name]
-        if expected_type and ((
-            isinstance(id_type, Unknown)
-            and not isinstance(expected_type, ArrayType)
-            ) or (
+        if expected_type and (
+            (isinstance(id_type, Unknown) and not isinstance(expected_type, ArrayType))
+            or (
                 isinstance(id_type, ArrayType)
                 and not id_type
                 and isinstance(expected_type, ArrayType)
@@ -505,16 +420,16 @@ class StaticChecker(BaseVisitor):
         if isinstance(elem_type, ArrayType):
             dim += elem_type.dim
             elem_type = elem_type.elem_type
-        return ArrayType(dim, elem_type)
+        return ArrayType(elem_type, dim)
 
     def visitIntLiteral(self, ast: IntLiteral, c) -> IntType:
-        return IntType()
+        return INT_TYPE
 
     def visitFloatLiteral(self, ast: FloatLiteral, c) -> FloatType:
-        return FloatType()
+        return FLOAT_TYPE
 
     def visitStringLiteral(self, ast: StringLiteral, c) -> StringType:
-        return StringType()
+        return STRING_TYPE
 
     def visitBooleanLiteral(self, ast: BooleanLiteral, c) -> BoolType:
-        return BoolType()
+        return BOOL_TYPE

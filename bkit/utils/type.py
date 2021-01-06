@@ -7,6 +7,21 @@ class Type(ABC):
     pass
 
 
+@dataclass(eq=False, frozen=True)
+class Unknown(Type):
+    """Unresolved type (monomorph)
+
+    A monomorph is a type which may, through unification, morph into a
+    different type later. If `prim` is True, it can only morph into a primitive
+    type.
+    """
+
+    prim: bool = False
+
+    def __bool__(self):
+        return False
+
+
 @dataclass(frozen=True)
 class Prim(Type):
     """Primitive type"""
@@ -44,6 +59,23 @@ class ArrayType(Type):
 
     def __bool__(self):
         return bool(self.elem_type)
+
+
+@dataclass
+class FuncType(Type):
+    intype: List[Type]
+    restype: Type
+
+    def __bool__(self):
+        return not isinstance(self.intype, Unknown) and bool(self.restype)
+
+
+@dataclass
+class OpType(Type):
+    """Operator type"""
+
+    op_type: Prim  # operand type
+    ret_type: Prim  # result type
 
 
 @dataclass
