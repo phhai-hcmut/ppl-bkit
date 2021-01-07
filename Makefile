@@ -3,13 +3,14 @@ ANTLR_BUILD = bkit/parser/antlr_build/BKITParser.py
 
 all: gen
 
-gen: ${ANTLR_BUILD}
+# gen: ${ANTLR_BUILD}
 
-${ANTLR_BUILD}: bkit/parser/BKIT.g4
+# ${ANTLR_BUILD}: bkit/parser/BKIT.g4
+gen: bkit/parser/BKIT.g4
 	${ANTLR_CMD} -o bkit/parser/antlr_build/ $<
 
 clean:
-	rm -f bkit/parser/antlr_build/BKIT*
+	rm -f bkit/parser/antlr_build/BKIT* lib/*.class
 
 test_lexer: ${ANTLR_BUILD}
 	@python -m unittest test.test_lexer

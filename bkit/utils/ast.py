@@ -60,12 +60,12 @@ class Literal(Expr):
     pass
 
 
-class LHS(Expr):
+class LHS(AST):
     pass
 
 
-@dataclass
-class Id(LHS):
+@dataclass(frozen=True)
+class Id(Expr, LHS):
     name: str
 
     def __str__(self):
@@ -75,7 +75,7 @@ class Id(LHS):
         return v.visitId(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Program(AST):
     decl: List[Decl]
 
@@ -87,7 +87,7 @@ class Program(AST):
         return v.visitProgram(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class VarDecl(Decl):
     variable: Id
     varDimen: List[int]  # empty list for scalar variable
@@ -102,7 +102,7 @@ class VarDecl(Decl):
         return v.visitVarDecl(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class FuncDecl(Decl):
     name: Id
     param: List[VarDecl]
@@ -119,8 +119,8 @@ class FuncDecl(Decl):
         return v.visitFuncDecl(self, param)
 
 
-@dataclass
-class ArrayCell(LHS):
+@dataclass(frozen=True)
+class ArrayCell(Expr, LHS):
     arr: Expr
     idx: List[Expr]
 
@@ -131,7 +131,7 @@ class ArrayCell(LHS):
         return v.visitArrayCell(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class BinaryOp(Expr):
     op: str
     left: Expr
@@ -144,7 +144,7 @@ class BinaryOp(Expr):
         return v.visitBinaryOp(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class UnaryOp(Expr):
     op: str
     body: Expr
@@ -156,7 +156,7 @@ class UnaryOp(Expr):
         return v.visitUnaryOp(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class CallExpr(Expr):
     method: Id
     param: List[Expr]
@@ -168,7 +168,7 @@ class CallExpr(Expr):
         return v.visitCallExpr(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class IntLiteral(Literal):
     value: int
 
@@ -179,7 +179,7 @@ class IntLiteral(Literal):
         return v.visitIntLiteral(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class FloatLiteral(Literal):
     value: float
 
@@ -190,7 +190,7 @@ class FloatLiteral(Literal):
         return v.visitFloatLiteral(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class StringLiteral(Literal):
     value: str
 
@@ -201,7 +201,7 @@ class StringLiteral(Literal):
         return v.visitStringLiteral(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class BooleanLiteral(Literal):
     value: bool
 
@@ -212,7 +212,7 @@ class BooleanLiteral(Literal):
         return v.visitBooleanLiteral(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ArrayLiteral(Literal):
     value: List[Literal]
 
@@ -229,7 +229,7 @@ class Stmt(AST):
         return self.print_list(list(var_decls)) + "," + self.print_list(list(stmts))
 
 
-@dataclass
+@dataclass(frozen=True)
 class Assign(Stmt):
     lhs: LHS
     rhs: Expr
@@ -241,7 +241,7 @@ class Assign(Stmt):
         return v.visitAssign(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class If(Stmt):
     # Expr is the condition,
     # List[VarDecl] is the list of declaration in the beginning of Then branch,
@@ -270,7 +270,7 @@ class If(Stmt):
         return v.visitIf(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class For(Stmt):
     idx1: Id
     expr1: Expr
@@ -302,7 +302,7 @@ class Continue(Stmt):
         return v.visitContinue(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Return(Stmt):
     expr: Optional[Expr]  # None if no expression
 
@@ -313,7 +313,7 @@ class Return(Stmt):
         return v.visitReturn(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Dowhile(Stmt):
     sl: Tuple[List[VarDecl], List[Stmt]]
     exp: Expr
@@ -326,7 +326,7 @@ class Dowhile(Stmt):
         return v.visitDowhile(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class While(Stmt):
     exp: Expr
     sl: Tuple[List[VarDecl], List[Stmt]]
@@ -339,7 +339,7 @@ class While(Stmt):
         return v.visitWhile(self, param)
 
 
-@dataclass
+@dataclass(frozen=True)
 class CallStmt(Stmt):
     method: Id
     param: List[Expr]

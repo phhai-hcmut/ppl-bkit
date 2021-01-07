@@ -1,1 +1,4 @@
+/test/codegen_out/
 /bkit/parser/antlr_build/BKIT*
+# Java bytecode file
+*.class

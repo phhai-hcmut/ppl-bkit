@@ -1,0 +1,11 @@
+[MASTER]
+ignore=antlr_build
+
+[MESSAGES CONTROL]
+confidence=INFERENCE
+disable=
+	missing-docstring,
+	too-few-public-methods,
+	too-many-public-methods,
+	invalid-name,
+	unused-argument

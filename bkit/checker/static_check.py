@@ -185,7 +185,7 @@ class StaticChecker(BaseVisitor):
             if ast.varDimen:
                 c.locals[name] = ArrayType(Unknown(True), ast.varDimen)  # type: ignore
             else:
-                c.locals[name] = Unknown()
+                c.locals[name] = Unknown(True)
 
         if IdKind is Parameter:
             if param_type:

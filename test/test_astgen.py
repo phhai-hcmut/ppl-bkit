@@ -3,8 +3,9 @@ from pprint import pformat
 import unittest
 
 from antlr4 import InputStream, CommonTokenStream
-from bkit import BKITLexer, BKITParser, ASTGeneration
-from bkit.util.ast import *
+from bkit.parser import BKITLexer, BKITParser
+from bkit.astgen import ASTGeneration
+from bkit.utils.ast import *
 
 
 class TestAST(unittest.TestCase):
@@ -15,7 +16,9 @@ class TestAST(unittest.TestCase):
         # parser.setTrace(True)
         tree = parser.program()
         asttree = ASTGeneration().visit(tree)
-        self.assertEqual(str(asttree), str(expect), "\n" + pformat(asdict(asttree))) #+"\n"+pformat(asdict(expect)))
+        self.assertEqual(
+            str(asttree), str(expect), "\n" + pformat(asdict(asttree))
+        )  # +"\n"+pformat(asdict(expect)))
 
 
 # @unittest.skip
@@ -601,6 +604,13 @@ class TestExpression(TestAST):
     def test_elem_expr_with_func(self):
         input = EXPR_TEST_TMPL.format("f()[0]")
         expect = expr_expect_tmpl(ArrayCell(CallExpr(Id('f'), []), [IntLiteral(0)]))
+        self.check_astgen(input, expect)
+
+    def test_float_pred(self):
+        input = EXPR_TEST_TMPL.format("2 +. 3 *. 3")
+        expect = expr_expect_tmpl(
+            BinaryOp('+.', IntLiteral(2), BinaryOp('*.', IntLiteral(3), IntLiteral(3)))
+        )
         self.check_astgen(input, expect)
 
 

@@ -24,6 +24,22 @@ class TestChecker(unittest.TestCase):
 
 
 class LongTest(TestChecker):
+    def test_array_assign(self):
+        stmt = Assign(Id('x'), ArrayCell(Id('y'), [IntLiteral(0)]))
+        input = FuncDecl(
+            Id('main'),
+            [],
+            (
+                [
+                    VarDecl(Id('x'), [1], ArrayLiteral([IntLiteral(0)])),
+                    VarDecl(Id('y'), [1], None),
+                ],
+                [stmt],
+            ),
+        )
+        expect = TypeMismatchInStatement(stmt)
+        self.check_static(input, expect)
+
     def test_khanh(self):
         # input = Program([
         #     FuncDecl(Id('foo'), [VarDecl(Id('x'), [], None)], ([], [Return(IntLiteral(10))])),
@@ -1308,6 +1324,25 @@ class TestTypeInference(TestChecker):
             ]
         )
         expect = TypeMismatchInStatement(stmt)
+        self.check_static(input, expect)
+
+    def test_call_by_reference(self):
+        stmt = CallStmt(Id('f'), [Id('x')])
+        input = Program(
+            [
+                FuncDecl(
+                    Id('main'),
+                    [],
+                    ([VarDecl(Id('x'), [1], ArrayLiteral([IntLiteral(0)]))], [stmt]),
+                ),
+                FuncDecl(
+                    Id('f'),
+                    [VarDecl(Id('x'), [1], None)],
+                    ([], [Assign(ArrayCell(Id('x'), [IntLiteral(0)]), IntLiteral(1))]),
+                ),
+            ]
+        )
+        expect = ''
         self.check_static(input, expect)
 
     def test_infer_int_type_in_for_stmt(self):
