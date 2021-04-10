@@ -62,7 +62,7 @@ class ArrayType(Type):
 
 
 @dataclass
-class FuncType(Type):
+class FuncType:
     intype: List[Type]
     restype: Type
 
@@ -71,7 +71,7 @@ class FuncType(Type):
 
 
 @dataclass
-class OpType(Type):
+class OpType:
     """Operator type"""
 
     op_type: Prim  # operand type
@@ -79,7 +79,7 @@ class OpType(Type):
 
 
 @dataclass
-class MType(Type):
+class MType:
     partype: List[Type]
     rettype: Type
 

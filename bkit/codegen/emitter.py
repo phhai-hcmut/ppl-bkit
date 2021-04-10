@@ -13,8 +13,11 @@ Index = int
 
 @dataclass
 class Symbol:
-    type: Type
+    type: Union[Type, MType]
     val: Union[Index, CName]
+
+
+Emitter = Iterator[str]
 
 
 _jvm = JasminCode()
@@ -54,7 +57,8 @@ def _get_full_type(typ: Prim) -> str:
 ################################################################################
 # Directives
 ################################################################################
-def emit_header(name: CName, parent: Optional[str] = None) -> Iterator[str]:
+
+def emit_header(name: CName, parent: Optional[str] = None) -> Emitter:
     """Generate some starting directives for a class.
 
     .source MPC.CLASSNAME.java
@@ -66,7 +70,7 @@ def emit_header(name: CName, parent: Optional[str] = None) -> Iterator[str]:
     yield _jvm.emitSUPER(parent if parent else 'java/lang/Object')
 
 
-def emit_field(lexeme: str, typ: Type) -> Iterator[str]:
+def emit_field(lexeme: str, typ: Type) -> Emitter:
     """Generate the field (static) directive for a class mutable or immutable attribute.
 
     lexeme -- the name of the attribute.
@@ -76,25 +80,26 @@ def emit_field(lexeme: str, typ: Type) -> Iterator[str]:
     yield _jvm.emitSTATICFIELD(lexeme, _get_jvm_type(typ), False)
 
 
-def emit_method(name: str, typ: Type, is_static: bool = True) -> Iterator[str]:
+def emit_method(name: str, typ: Type, is_static: bool = True) -> Emitter:
     """method directive for a function"""
     yield _jvm.emitMETHOD(name, _get_jvm_type(typ), is_static)
 
 
-def emit_end_method(frame: Frame) -> Iterator[str]:
+def emit_end_method(frame: Frame) -> Emitter:
     """End directives for a function"""
     yield _jvm.emitLIMITSTACK(frame.getMaxOpStackSize())
     yield _jvm.emitLIMITLOCAL(frame.getMaxIndex())
     yield _jvm.emitENDMETHOD()
 
 
-def emit_var(var_name: str, sym: Symbol, frame: Frame) -> Iterator[str]:
+def emit_var(var_name: str, sym: Symbol, frame: Frame) -> Emitter:
     """var directive for a local variable"""
     index = cast(Index, sym.val)
+    typ = cast(Type, sym.type)
     yield _jvm.emitVAR(
         index,
         var_name,
-        _get_jvm_type(sym.type),
+        _get_jvm_type(typ),
         frame.getStartLabel(),
         frame.getEndLabel(),
     )
@@ -103,23 +108,24 @@ def emit_var(var_name: str, sym: Symbol, frame: Frame) -> Iterator[str]:
 ################################################################################
 # Control Flow Instructions
 ################################################################################
-def emit_label(label: int) -> Iterator[str]:
+
+def emit_label(label: int) -> Emitter:
     """Generate code that represents a label"""
     yield _jvm.emitLABEL(label)
 
 
-def emit_goto(label: int) -> Iterator[str]:
+def emit_goto(label: int) -> Emitter:
     """Generate code to jump to a label"""
     yield _jvm.emitGOTO(label)
 
 
-def emit_if_true(label: int, frame: Frame) -> Iterator[str]:
+def emit_if_true(label: int, frame: Frame) -> Emitter:
     """Jump to label if the value on top of operand stack is true."""
     frame.pop()
     yield _jvm.emitIFGT(label)
 
 
-def emit_if_false(label: int, frame: Frame) -> Iterator[str]:
+def emit_if_false(label: int, frame: Frame) -> Emitter:
     """Jump to label if the value on top of operand stack is false."""
     frame.pop()
     yield _jvm.emitIFLE(label)
@@ -130,7 +136,7 @@ def emit_invoke_special(frame):
     yield _jvm.emitINVOKESPECIAL()
 
 
-def emit_invoke_static(method_name: str, sym: Symbol, frame) -> Iterator[str]:
+def emit_invoke_static(method_name: str, sym: Symbol, frame) -> Emitter:
     """Invoke a class (static) method
 
     Operand Stack:
@@ -142,14 +148,14 @@ def emit_invoke_static(method_name: str, sym: Symbol, frame) -> Iterator[str]:
 
     for _ in typ.partype:
         frame.pop()
-    if typ.rettype is not VOID_TYPE:
+    if type(typ.rettype) is not VoidType:
         frame.push()
     class_name = cast(CName, sym.val)
     lexeme = class_name + '/' + method_name
     yield _jvm.emitINVOKESTATIC(lexeme, _get_jvm_type(typ))
 
 
-def emit_return(frame: Frame) -> Iterator[str]:
+def emit_return(frame: Frame) -> Emitter:
     """Return value from method
 
     Operand Stack:
@@ -173,7 +179,8 @@ def emit_return(frame: Frame) -> Iterator[str]:
 ################################################################################
 # Load/store Instructions
 ################################################################################
-def emit_read_var(name: str, sym: Symbol, frame: Frame) -> Iterator[str]:
+
+def emit_read_var(name: str, sym: Symbol, frame: Frame) -> Emitter:
     """Load value from a variable
 
     Operand Stack:
@@ -199,7 +206,7 @@ def emit_read_var(name: str, sym: Symbol, frame: Frame) -> Iterator[str]:
         yield _jvm.emitGETSTATIC(field_spec, _get_jvm_type(sym.type))
 
 
-def emit_write_var(name: str, sym: Symbol, frame) -> Iterator[str]:
+def emit_write_var(name: str, sym: Symbol, frame: Frame) -> Emitter:
     """Pop the top value from the operand stack and store it into variable.
 
     Operand Stack:
@@ -226,7 +233,7 @@ def emit_write_var(name: str, sym: Symbol, frame) -> Iterator[str]:
         yield _jvm.emitPUTSTATIC(field_spec, _get_jvm_type(sym.type))
 
 
-def emit_aload(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_aload(typ: Prim, frame: Frame) -> Emitter:
     """Load primitive type from array
 
     Operand Stack:
@@ -245,7 +252,7 @@ def emit_aload(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(str(typ))
 
 
-def emit_aaload(frame: Frame) -> Iterator[str]:
+def emit_aaload(frame: Frame) -> Emitter:
     """Load reference from array
 
     Operand Stack:
@@ -255,7 +262,7 @@ def emit_aaload(frame: Frame) -> Iterator[str]:
     yield _jvm.emitAALOAD()
 
 
-def emit_astore(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_astore(typ: Prim, frame: Frame) -> Emitter:
     """Store into primitive array
 
     Operand Stack:
@@ -279,7 +286,8 @@ def emit_astore(typ: Prim, frame: Frame) -> Iterator[str]:
 ################################################################################
 # Stack Manipulation Instructions
 ################################################################################
-def emit_dup(frame: Frame) -> Iterator[str]:
+
+def emit_dup(frame: Frame) -> Emitter:
     """Duplicate the top operand stack value
 
     Operand Stack:
@@ -289,7 +297,7 @@ def emit_dup(frame: Frame) -> Iterator[str]:
     yield _jvm.emitDUP()
 
 
-def emit_pop(frame: Frame) -> Iterator[str]:
+def emit_pop(frame: Frame) -> Emitter:
     """Pop the top operand stack value"""
     frame.pop()
     yield _jvm.emitPOP()
@@ -298,7 +306,8 @@ def emit_pop(frame: Frame) -> Iterator[str]:
 ################################################################################
 # Object Creation Instructions
 ################################################################################
-def emit_integer(val: Union[int, bool], frame: Frame) -> Iterator[str]:
+
+def emit_integer(val: Union[int, bool], frame: Frame) -> Emitter:
     frame.push()
     val = int(val)
     if -1 <= val <= 5:
@@ -311,7 +320,7 @@ def emit_integer(val: Union[int, bool], frame: Frame) -> Iterator[str]:
         yield _jvm.emitLDC(str(val))
 
 
-def emit_float(val: float, frame: Frame) -> Iterator[str]:
+def emit_float(val: float, frame: Frame) -> Emitter:
     frame.push()
     if val in [0, 1, 2]:
         yield _jvm.emitFCONST(f'{val:.1f}')
@@ -319,13 +328,13 @@ def emit_float(val: float, frame: Frame) -> Iterator[str]:
         yield _jvm.emitLDC(str(val))
 
 
-def emit_string(text: str, frame: Frame) -> Iterator[str]:
+def emit_string(text: str, frame: Frame) -> Emitter:
     """Push a constant string onto the operand stack."""
     frame.push()
     yield _jvm.emitLDC(f'"{text}"')
 
 
-def emit_new_array(typ: ArrayType, frame: Frame) -> Iterator[str]:
+def emit_new_array(typ: ArrayType, frame: Frame) -> Emitter:
     """Create new array"""
     if len(typ.dim) == 1:
         yield from emit_integer(typ.dim[0], frame)
@@ -346,7 +355,8 @@ def emit_new_array(typ: ArrayType, frame: Frame) -> Iterator[str]:
 ################################################################################
 # Operator Instructions
 ################################################################################
-def emit_neg(typ: Prim, frame: Frame) -> Iterator[str]:
+
+def emit_neg(typ: Prim, frame: Frame) -> Emitter:
     """Negate integer or float
 
     Operand Stack:
@@ -360,7 +370,7 @@ def emit_neg(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(f"Not expect operand of type {typ}")
 
 
-def emit_add(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_add(typ: Prim, frame: Frame) -> Emitter:
     """Add integer or float
 
     Operand Stack:
@@ -375,7 +385,7 @@ def emit_add(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(f"Not expect operand of type {typ}")
 
 
-def emit_sub(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_sub(typ: Prim, frame: Frame) -> Emitter:
     """Subtract integer or float
 
     Operand Stack:
@@ -389,7 +399,7 @@ def emit_sub(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(f"Not expect operand of type {typ}")
 
 
-def emit_mul(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_mul(typ: Prim, frame: Frame) -> Emitter:
     """Multiply integer or float
 
     Operand Stack:
@@ -404,7 +414,7 @@ def emit_mul(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(f"Not expect operand of type {typ}")
 
 
-def emit_div(typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_div(typ: Prim, frame: Frame) -> Emitter:
     """Divide integer or float
 
     Operand Stack:
@@ -419,7 +429,7 @@ def emit_div(typ: Prim, frame: Frame) -> Iterator[str]:
         raise IllegalOperandException(f"Not expect operand of type {typ}")
 
 
-def emit_rem(frame: Frame) -> Iterator[str]:
+def emit_rem(frame: Frame) -> Emitter:
     """Remainder integer
 
     Operand Stack:
@@ -429,7 +439,7 @@ def emit_rem(frame: Frame) -> Iterator[str]:
     yield _jvm.emitIREM()
 
 
-def emit_not(frame: Frame) -> Iterator[str]:
+def emit_not(frame: Frame) -> Emitter:
     """Boolean NOT
 
     Operand Stack:
@@ -440,7 +450,7 @@ def emit_not(frame: Frame) -> Iterator[str]:
     yield _jvm.INDENT + 'ixor' + _jvm.END
 
 
-def emit_cmp(op: str, typ: Prim, frame: Frame) -> Iterator[str]:
+def emit_cmp(op: str, typ: Prim, frame: Frame) -> Emitter:
     """Compare integer or float
 
     Operand Stack:

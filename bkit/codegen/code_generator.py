@@ -3,36 +3,38 @@ from dataclasses import dataclass, replace
 from itertools import chain, groupby
 from typing import (
     ChainMap,
-    Dict,
     Generator,
     Iterable,
     Iterator,
-    List,
-    Union,
+    Mapping,
+    MutableMapping,
     Optional,
+    TypeVar,
+    Union,
     cast,
+    overload,
 )
 
 from ..utils.ast import *
+from ..utils.type import *
 from ..utils.visitor import BaseVisitor
 from . import emitter
 from .emitter import (
-    BOOL_TYPE,
-    FLOAT_TYPE,
-    INT_TYPE,
-    STRING_TYPE,
-    VOID_TYPE,
-    ArrayType,
-    MType,
-    ClassType,
-    Prim,
-    Type,
+    # BOOL_TYPE,
+    # FLOAT_TYPE,
+    # INT_TYPE,
+    # STRING_TYPE,
+    # VOID_TYPE,
+    # ArrayType,
+    # ClassType,
     CName,
     Index,
+    # MType,
+    # Prim,
     Symbol,
+    # Type,
 )
 from .frame import Frame
-
 
 __all__ = 'CodeGenerator'
 
@@ -117,24 +119,46 @@ class CodeGenerator:
             f.write(code)
 
 
-class CodeGenVisitor(BaseVisitor):
+# The code below is magic, please don't read it too hard :)
+class CodeGenVisitor(BaseVisitor, Iterable[str]):
     """Iterable class for Jasmin code"""
 
     CLASS_NAME = CName('MCClass')
 
-    LiteralCode = Generator[str, None, Union[Prim, ArrayType]]
-    ExprCode = Generator[Union[str, SkipToFunc], None, Type]
-    LHSCode = Iterator[Union[str, SkipToFunc, NeedRValue]]
-    StmtCode = Iterator[Union[str, SkipToFunc]]
-
-    def __init__(self, ast: Program, initial_symtab: Dict[str, Symbol] = {}):
-        self.codegen = self.visitProgram(ast, initial_symtab.copy())
+    def __init__(self, program: Program, builtin_funcs: Mapping[str, Symbol] = {}):
+        self.program = program
+        self.builtin_funcs = builtin_funcs
 
     def __iter__(self) -> Iterator[str]:
-        return self.codegen
+        return self.visitProgram(self.program, dict(self.builtin_funcs))
+
+    _T = TypeVar('_T', Type, Union[Prim, ArrayType])
+    LiteralGen = Generator[str, None, _T]
+    ExprGen = Generator[Union[str, SkipToFunc], None, Type]
+    LHSGen = Iterator[Union[str, SkipToFunc, NeedRValue]]
+    BodyGen = Iterator[Union[str, SkipToFunc]]
+
+    @overload
+    def visit(self, ast: Literal, o: MethodEnv) -> LiteralGen:
+        ...
+
+    @overload
+    def visit(self, ast: LHS, o: Access) -> LHSGen:
+        ...
+
+    @overload
+    def visit(self, ast: Expr, o: Access) -> ExprGen:
+        ...
+
+    @overload
+    def visit(self, ast: Stmt, o: MethodEnv) -> BodyGen:
+        ...
+
+    def visit(self, ast: AST, o):
+        return ast.accept(self, o)
 
     def visitProgram(
-        self, ast: Program, global_symtab: Dict[str, Symbol]
+        self, ast: Program, global_symtab: MutableMapping[str, Symbol]
     ) -> Iterator[str]:
         yield from emitter.emit_header(self.CLASS_NAME)
 
@@ -162,7 +186,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from self.gen_func_decls(entry_point, func_gens)
 
     def gen_clinit(
-        self, var_decls: Iterable[VarDecl], symtab: Dict[str, Symbol]
+        self, var_decls: Iterable[VarDecl], symtab: MutableMapping[str, Symbol]
     ) -> Iterator[str]:
         methodname = '<clinit>'
         methodtype = MType([], VOID_TYPE)
@@ -203,7 +227,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_end_method(frame)
 
     def gen_func_decls(
-        self, func_gen: StmtCode, wait_funcs: Dict[str, StmtCode]
+        self, func_gen: BodyGen, wait_funcs: MutableMapping[str, BodyGen]
     ) -> Iterator[str]:
         ret = next(func_gen)
         while isinstance(ret, SkipToFunc):
@@ -217,7 +241,7 @@ class CodeGenVisitor(BaseVisitor):
     def visitVarDecl(self, ast: VarDecl, o: MethodEnv) -> Iterator[str]:
         name = ast.variable.name
 
-        init_gen = self.visit(ast.varInit, o)
+        init_gen = self.visit(cast(Literal, ast.varInit), o)
         var_type, init_code = self.capture_gen_return(init_gen)
 
         is_global = len(o.symtab.maps) == 1
@@ -233,8 +257,8 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_write_var(name, var_sym, o.frame)
 
     def visitFuncDecl(
-        self, ast: FuncDecl, global_symtab: Dict[str, Symbol]
-    ) -> StmtCode:
+        self, ast: FuncDecl, global_symtab: MutableMapping[str, Symbol]
+    ) -> BodyGen:
         name = ast.name.name
         func_sym = global_symtab[name]
         func_type = cast(MType, func_sym.type)
@@ -272,7 +296,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_return(frame)
         yield from emitter.emit_end_method(frame)
 
-    def visitAssign(self, ast: Assign, o: MethodEnv) -> StmtCode:
+    def visitAssign(self, ast: Assign, o: MethodEnv) -> BodyGen:
         lhs_gen = self.visit(ast.lhs, Access(o.frame, o.symtab, rvalue=False))
         ret = next(lhs_gen)
         while not isinstance(ret, NeedRValue):
@@ -280,9 +304,9 @@ class CodeGenVisitor(BaseVisitor):
             ret = next(lhs_gen)
         rhs_access = Access.from_method_env(o, expected_type=ret.left_type)
         yield from self.visit(ast.rhs, rhs_access)
-        yield from lhs_gen
+        yield from cast(CodeGenVisitor.BodyGen, lhs_gen)
 
-    def visitIf(self, ast: If, o: MethodEnv) -> StmtCode:
+    def visitIf(self, ast: If, o: MethodEnv) -> BodyGen:
         cond_access = Access.from_method_env(o, expected_type=BOOL_TYPE)
         end_if_label = o.frame.getNewLabel()
 
@@ -298,7 +322,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from self.visit_stmt_list(*ast.elseStmt, o)
         yield from emitter.emit_label(end_if_label)
 
-    def visitFor(self, ast: For, o: MethodEnv) -> StmtCode:
+    def visitFor(self, ast: For, o: MethodEnv) -> BodyGen:
         o.frame.enterLoop()
         # Assign initial value to index variable
         init_stmt = Assign(ast.idx1, ast.expr1)
@@ -323,7 +347,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_label(o.frame.getBreakLabel())
         o.frame.exitLoop()
 
-    def visitWhile(self, ast: While, o) -> StmtCode:
+    def visitWhile(self, ast: While, o: MethodEnv) -> BodyGen:
         o.frame.enterLoop()
         # Continue label
         yield from emitter.emit_label(o.frame.getContinueLabel())
@@ -339,7 +363,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_label(o.frame.getBreakLabel())
         o.frame.exitLoop()
 
-    def visitDowhile(self, ast: Dowhile, o) -> StmtCode:
+    def visitDowhile(self, ast: Dowhile, o: MethodEnv) -> BodyGen:
         o.frame.enterLoop()
         # Start the loop
         start_loop = o.frame.getNewLabel()
@@ -358,29 +382,30 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_label(o.frame.getBreakLabel())
         o.frame.exitLoop()
 
-    def visitContinue(self, ast: Continue, o: MethodEnv) -> StmtCode:
+    def visitContinue(self, ast: Continue, o: MethodEnv) -> BodyGen:
         yield from emitter.emit_goto(o.frame.getContinueLabel())
 
-    def visitBreak(self, ast: Break, o: MethodEnv) -> StmtCode:
+    def visitBreak(self, ast: Break, o: MethodEnv) -> BodyGen:
         yield from emitter.emit_goto(o.frame.getBreakLabel())
 
-    def visitCallStmt(self, ast: CallStmt, o: MethodEnv) -> StmtCode:
+    def visitCallStmt(self, ast: CallStmt, o: MethodEnv) -> BodyGen:
         access = Access.from_method_env(o, expected_type=VOID_TYPE)
         call_expr = cast(CallExpr, ast)
         yield from self.visitCallExpr(call_expr, access)
 
     def visit_stmt_list(
         self,
-        var_decls: List[VarDecl],
-        stmts: List[Stmt],
+        var_decls: Iterable[VarDecl],
+        stmts: Iterable[Stmt],
         o: MethodEnv,
         new_scope: bool = True,
-    ) -> StmtCode:
+    ) -> BodyGen:
         if new_scope:
             o.enter_scope()
 
         var_gens = [self.visitVarDecl(var_decl, o) for var_decl in var_decls]
         # Generate .var directives for local variables
+        # reveal_type(self.visit)
         yield from map(next, var_gens)  # type: ignore
 
         yield from emitter.emit_label(o.frame.getStartLabel())
@@ -395,7 +420,7 @@ class CodeGenVisitor(BaseVisitor):
         if new_scope:
             o.exit_scope()
 
-    def visitReturn(self, ast: Return, o: MethodEnv) -> StmtCode:
+    def visitReturn(self, ast: Return, o: MethodEnv) -> BodyGen:
         func_type = o.frame.func_type
         if ast.expr is None:
             func_type.rettype = VOID_TYPE
@@ -405,7 +430,7 @@ class CodeGenVisitor(BaseVisitor):
         # Jump to the end of function to return value
         yield from emitter.emit_goto(o.frame.endLabel[0])
 
-    def visitId(self, ast: Id, o: Access) -> Union[ExprCode, LHSCode]:
+    def visitId(self, ast: Id, o: Access) -> Union[ExprGen, LHSGen]:
         sym = o.symtab[ast.name]
         if o.rvalue:
             yield from emitter.emit_read_var(ast.name, sym, o.frame)
@@ -414,9 +439,10 @@ class CodeGenVisitor(BaseVisitor):
             yield NeedRValue(sym.type)
             yield from emitter.emit_write_var(ast.name, sym, o.frame)
 
-    def visitArrayCell(self, ast: ArrayCell, o: Access) -> Union[ExprCode, LHSCode]:
+    def visitArrayCell(self, ast: ArrayCell, o: Access) -> Union[ExprGen, LHSGen]:
         expr_access = Access.from_method_env(o)
         array_type = yield from self.visit(ast.arr, expr_access)
+        array_type = cast(ArrayType, array_type)
 
         idx_access = Access.from_method_env(o, expected_type=INT_TYPE)
         for idx_expr in ast.idx[:-1]:
@@ -431,13 +457,13 @@ class CodeGenVisitor(BaseVisitor):
             yield NeedRValue(array_type.elem_type)
             yield from emitter.emit_astore(array_type.elem_type, o.frame)
 
-    def visitCallExpr(self, ast: CallExpr, o: Access) -> ExprCode:
+    def visitCallExpr(self, ast: CallExpr, o: Access) -> ExprGen:
         name = ast.method.name
         if name not in o.symtab:
             callee_type = MType([None] * len(ast.param), o.expected_type)  # type: ignore
             callee_sym = Symbol(callee_type, self.CLASS_NAME)
-            global_symtab = o.symtab.maps[-1]
-            global_symtab[name] = callee_sym  # type: ignore
+            global_symtab = cast(MutableMapping[str, Symbol], o.symtab.maps[-1])
+            global_symtab[name] = callee_sym
         else:
             callee_sym = o.symtab[name]
             callee_type = cast(MType, callee_sym.type)
@@ -454,7 +480,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from emitter.emit_invoke_static(name, callee_sym, o.frame)
         return callee_type.rettype
 
-    def visitBinaryOp(self, ast: BinaryOp, o: MethodEnv) -> ExprCode:
+    def visitBinaryOp(self, ast: BinaryOp, o: Access) -> ExprGen:
         operand_type = self.get_operand_type(ast.op)
         operand_access = replace(o, expected_type=operand_type)
         yield from self.visit(ast.left, operand_access)
@@ -474,7 +500,7 @@ class CodeGenVisitor(BaseVisitor):
         elif ast.op == '%':
             yield from emitter.emit_rem(o.frame)
         elif ast.op in ['&&', '||']:
-            yield from self.gen_short_logic_op(ast.op == '&&', o.frame, right_gen)
+            yield from self._gen_short_logic_op(ast.op == '&&', o.frame, right_gen)
         else:
             # Relational operator
             yield from emitter.emit_cmp(ast.op, operand_type, o.frame)
@@ -485,7 +511,7 @@ class CodeGenVisitor(BaseVisitor):
             return BOOL_TYPE
 
     @staticmethod
-    def gen_short_logic_op(is_and: bool, frame: Frame, right_gen: ExprCode) -> StmtCode:
+    def _gen_short_logic_op(is_and: bool, frame: Frame, right_gen: ExprGen) -> BodyGen:
         """Generate short-circuit AND and OR operator"""
         yield from emitter.emit_dup(frame)
         skip_label = frame.getNewLabel()
@@ -497,7 +523,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from right_gen
         yield from emitter.emit_label(skip_label)
 
-    def visitUnaryOp(self, ast: UnaryOp, o: MethodEnv) -> ExprCode:
+    def visitUnaryOp(self, ast: UnaryOp, o: Access) -> ExprGen:
         operand_type = self.get_operand_type(ast.op)
         operand_access = replace(o, expected_type=operand_type)
         yield from self.visit(ast.body, operand_access)
@@ -517,7 +543,7 @@ class CodeGenVisitor(BaseVisitor):
         else:
             return INT_TYPE
 
-    def visitArrayLiteral(self, ast: ArrayLiteral, o: MethodEnv) -> LiteralCode:
+    def visitArrayLiteral(self, ast: ArrayLiteral, o: MethodEnv) -> LiteralGen[ArrayType]:
         # Simulate an array reference on operand stack
         o.frame.push()
         init_gen = self.gen_init_array(ast, o)
@@ -527,7 +553,7 @@ class CodeGenVisitor(BaseVisitor):
         yield from iter(init_code)
         return array_type
 
-    def gen_init_array(self, ast: ArrayLiteral, o: MethodEnv) -> LiteralCode:
+    def gen_init_array(self, ast: ArrayLiteral, o: MethodEnv) -> LiteralGen:
         for i, subarray in enumerate(ast.value):
             yield from emitter.emit_dup(o.frame)
             yield from emitter.emit_integer(i, o.frame)
@@ -557,18 +583,18 @@ class CodeGenVisitor(BaseVisitor):
         yield_values = list(handle_gen())
         return return_value, yield_values
 
-    def visitBooleanLiteral(self, ast: BooleanLiteral, o: MethodEnv) -> LiteralCode:
+    def visitBooleanLiteral(self, ast: BooleanLiteral, o: MethodEnv) -> LiteralGen[BoolType]:
         yield from emitter.emit_integer(ast.value, o.frame)
         return BOOL_TYPE
 
-    def visitIntLiteral(self, ast: IntLiteral, o: MethodEnv) -> LiteralCode:
+    def visitIntLiteral(self, ast: IntLiteral, o: MethodEnv) -> LiteralGen[IntType]:
         yield from emitter.emit_integer(ast.value, o.frame)
         return INT_TYPE
 
-    def visitFloatLiteral(self, ast: FloatLiteral, o: MethodEnv) -> LiteralCode:
+    def visitFloatLiteral(self, ast: FloatLiteral, o: MethodEnv) -> LiteralGen[FloatType]:
         yield from emitter.emit_float(ast.value, o.frame)
         return FLOAT_TYPE
 
-    def visitStringLiteral(self, ast: StringLiteral, o: MethodEnv) -> LiteralCode:
+    def visitStringLiteral(self, ast: StringLiteral, o: MethodEnv) -> LiteralGen[StringType]:
         yield from emitter.emit_string(ast.value, o.frame)
         return STRING_TYPE

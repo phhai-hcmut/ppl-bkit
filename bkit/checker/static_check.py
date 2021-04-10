@@ -360,7 +360,6 @@ class StaticChecker(BaseVisitor):
             old_param_type = func_type.intype[param_idx]
             arg_type = self.visit(arg, (c, old_param_type))
             param_type = func_type.intype[param_idx]
-            print(arg_type, param_type)
             param_type = self.unify_type(arg_type, param_type, ast)
             if not old_param_type and param_type:
                 self.visit(arg, (c, param_type))
