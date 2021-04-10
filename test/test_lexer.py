@@ -1,8 +1,8 @@
 import unittest
 
 from antlr4 import InputStream, Token
-from bkit import BKITLexer
-from bkit.lexererr import LexerError
+from bkit.parser import BKITLexer
+from bkit.parser.lexererr import LexerError
 
 
 # def check_lexeme(input,expect,num):
