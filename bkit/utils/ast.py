@@ -102,11 +102,20 @@ class VarDecl(Decl):
         return v.visitVarDecl(self, param)
 
 
+class Stmt(AST):
+    def print_stmt_list(self, var_decls: List[VarDecl], stmts: List[Stmt]) -> str:
+        # Must make a copy of list as List type is invariant
+        return self.print_list(list(var_decls)) + "," + self.print_list(list(stmts))
+
+
+StmtList = tuple[list[VarDecl], list[Stmt]]
+
+
 @dataclass(frozen=True)
 class FuncDecl(Decl):
     name: Id
     param: List[VarDecl]
-    body: Tuple[List[VarDecl], List[Stmt]]
+    body: StmtList
 
     def __str__(self):
         params = self.print_list(self.param)
@@ -223,12 +232,6 @@ class ArrayLiteral(Literal):
         return v.visitArrayLiteral(self, param)
 
 
-class Stmt(AST):
-    def print_stmt_list(self, var_decls: List[VarDecl], stmts: List[Stmt]) -> str:
-        # Must make a copy of list as List type is invariant
-        return self.print_list(list(var_decls)) + "," + self.print_list(list(stmts))
-
-
 @dataclass(frozen=True)
 class Assign(Stmt):
     lhs: LHS
@@ -249,7 +252,8 @@ class If(Stmt):
     # List[Stmt] is the list of statement after the declaration in Then branch,
     #   empty list if no statement
     ifthenStmt: List[Tuple[Expr, List[VarDecl], List[Stmt]]]
-    elseStmt: Tuple[List[VarDecl], List[Stmt]]  # for Else branch, empty list if no Else
+    # Else branch, empty list if no Else
+    elseStmt: StmtList
 
     def __str__(self):
         def print_if_then_stmt(if_then_stmt):
@@ -276,7 +280,7 @@ class For(Stmt):
     expr1: Expr
     expr2: Expr
     expr3: Expr
-    loop: Tuple[List[VarDecl], List[Stmt]]
+    loop: StmtList
 
     def __str__(self):
         stmt_list = self.print_stmt_list(*self.loop)
@@ -315,7 +319,7 @@ class Return(Stmt):
 
 @dataclass(frozen=True)
 class Dowhile(Stmt):
-    sl: Tuple[List[VarDecl], List[Stmt]]
+    sl: StmtList
     exp: Expr
 
     def __str__(self):
@@ -329,7 +333,7 @@ class Dowhile(Stmt):
 @dataclass(frozen=True)
 class While(Stmt):
     exp: Expr
-    sl: Tuple[List[VarDecl], List[Stmt]]
+    sl: StmtList
 
     def __str__(self):
         stmt_list = self.print_stmt_list(*self.sl)

@@ -43,9 +43,7 @@ class ASTGeneration(BKITVisitor):
     def visitFunc_params(self, ctx: P.Func_paramsContext) -> Iterator[ast.VarDecl]:
         return map(self.visitParam, ctx.param())
 
-    def visitFunc_body(
-        self, ctx: P.Func_bodyContext
-    ) -> Tuple[List[ast.VarDecl], List[ast.Stmt]]:
+    def visitFunc_body(self, ctx: P.Func_bodyContext) -> ast.StmtList:
         return self.visitStmt_list(ctx.stmt_list())
 
     def visitParam(self, ctx: P.ParamContext) -> ast.VarDecl:
@@ -57,9 +55,7 @@ class ASTGeneration(BKITVisitor):
         var_dim = map(self.visit, ctx.integer())
         return variable, list(var_dim)
 
-    def visitStmt_list(
-        self, ctx: P.Stmt_listContext
-    ) -> Tuple[List[ast.VarDecl], List[ast.Stmt]]:
+    def visitStmt_list(self, ctx: P.Stmt_listContext) -> ast.StmtList:
         var_decl_part = self.visitVar_decl_part(ctx.var_decl_part())
         other_stmts = map(self.visit, ctx.other_stmt())
         return list(var_decl_part), list(other_stmts)
@@ -127,9 +123,7 @@ class ASTGeneration(BKITVisitor):
         body = self.visitStmt_list(ctx.stmt_list())
         return cond, body[0], body[1]
 
-    def visitElse_stmt(
-        self, ctx: P.Else_stmtContext
-    ) -> Tuple[List[ast.VarDecl], List[ast.Stmt]]:
+    def visitElse_stmt(self, ctx: P.Else_stmtContext) -> ast.StmtList:
         return self.visitStmt_list(ctx.stmt_list())
 
     def visitCall_stmt(self, ctx: P.Call_stmtContext) -> ast.CallStmt:
