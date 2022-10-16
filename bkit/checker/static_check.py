@@ -138,6 +138,7 @@ class StaticChecker(BaseVisitor):
     def __init__(self, program: ast.Program):
         self.ast = program
         self.cur_stmt: ast.Stmt
+        self._cur_func_has_return: bool
 
     def check(self) -> AnalysisResult:
         global_scope = {name: name for name in BUILTIN_FUNCS}
@@ -238,6 +239,7 @@ class StaticChecker(BaseVisitor):
         return typ
 
     def _check_function_definition(self, ast: ast.FuncDecl, c: Context) -> None:
+        self._cur_func_has_return = False
         symbol = ast.name
         func_type = cast(bkit.FuncType, c.get_type(symbol.name))
 
@@ -252,6 +254,9 @@ class StaticChecker(BaseVisitor):
             c.declare_symbol(symbol, param_type, Parameter())
 
         self.visit_stmt_list(*ast.body, c, False)
+
+        if not func_type.restype and not self._cur_func_has_return:
+            func_type.restype = VOID_TYPE
 
     def visitAssign(self, ast: ast.Assign, c: FunctionContext) -> None:
         lhs_type = self.visit(ast.lhs, (c, None))
@@ -302,6 +307,7 @@ class StaticChecker(BaseVisitor):
             self.visit(stmt, c)
 
     def visitReturn(self, ast: ast.Return, c: FunctionContext) -> None:
+        self._cur_func_has_return = True
         func_type = c.current_function_type
         if ast.expr is None:
             expr_type = VOID_TYPE
