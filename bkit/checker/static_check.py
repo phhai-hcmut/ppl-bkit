@@ -28,6 +28,7 @@ from .exceptions import (
     Identifier,
     Kind,
     NoEntryPoint,
+    NotInLoop,
     Parameter,
     Redeclared,
     TypeCannotBeInferred,
@@ -67,9 +68,10 @@ class Context:
         self.side_table[ident_id] = type
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FunctionContext(Context):
     current_function: ast.FuncDecl
+    loop_level: int = 0
     _params_id: list[int] = field(init=False)
 
     def __post_init__(self):
@@ -79,8 +81,15 @@ class FunctionContext(Context):
     def current_function_type(self) -> bkit.FuncType:
         return self.side_table[id(self.current_function.name)]  # type: ignore
 
+    @property
+    def is_in_loop(self) -> bool:
+        return self.loop_level > 0
+
     def new_scope(self) -> "FunctionContext":
         return replace(self, scopes=self.scopes.new_child())
+
+    def enter_loop(self) -> "FunctionContext":
+        return replace(self, loop_level=self.loop_level + 1)
 
     def set_type(self, ident: str, type: bkit.Type) -> None:
         ident_id = self.scopes[ident]
@@ -268,14 +277,14 @@ class StaticChecker(BaseVisitor):
         self.unify_expr_type(ast.expr1, INT_TYPE, c, ast)
         self.unify_expr_type(ast.expr2, BOOL_TYPE, c, ast)
         self.unify_expr_type(ast.expr3, INT_TYPE, c, ast)
-        self.visit_stmt_list(*ast.loop, c)
+        self.visit_stmt_list(*ast.loop, c.enter_loop())
 
     def visitWhile(self, ast: ast.While, c: FunctionContext) -> None:
         self.unify_expr_type(ast.exp, BOOL_TYPE, c, ast)
-        self.visit_stmt_list(*ast.sl, c)
+        self.visit_stmt_list(*ast.sl, c.enter_loop())
 
     def visitDowhile(self, ast: ast.Dowhile, c: FunctionContext) -> None:
-        self.visit_stmt_list(*ast.sl, c)
+        self.visit_stmt_list(*ast.sl, c.enter_loop())
         self.unify_expr_type(ast.exp, BOOL_TYPE, c, ast)
 
     def visitCallStmt(self, ast: ast.CallStmt, c: FunctionContext) -> None:
@@ -306,11 +315,13 @@ class StaticChecker(BaseVisitor):
 
         func_type.restype = self.unify_type(expr_type, func_type.restype, ast)
 
-    # def visitContinue(self, ast: ast.Continue, c: FunctionContext) -> None:
-    #     return c
+    def visitContinue(self, ast: ast.Continue, c: FunctionContext) -> None:
+        if not c.is_in_loop:
+            raise NotInLoop(ast)
 
-    # def visitBreak(self, ast: ast.Break, c: FunctionContext) -> None:
-    #     return c
+    def visitBreak(self, ast: ast.Break, c: FunctionContext) -> None:
+        if not c.is_in_loop:
+            raise NotInLoop(ast)
 
     def visitArrayCell(self, ast: ast.ArrayCell, c: ExprParam) -> Prim:
         context, expected_type = c
