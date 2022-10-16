@@ -1,9 +1,10 @@
 from collections import ChainMap
 from dataclasses import dataclass, field, replace
-from typing import Optional, Union, cast
+from typing import NamedTuple, Optional, Union, cast
 
 from ..utils import ast
 from ..utils import type as bkit
+from ..utils.builtins import BUILTIN_FUNCS, get_operator_type
 from ..utils.type import (
     BOOL_TYPE,
     FLOAT_TYPE,
@@ -15,7 +16,6 @@ from ..utils.type import (
     FloatType,
     FuncType,
     IntType,
-    OpType,
     Prim,
     StringType,
     Type,
@@ -38,12 +38,27 @@ from .exceptions import (
     Variable,
 )
 
+SymbolId = Union[int, str]
+
+
+class AnalysisResult(NamedTuple):
+    resolution_table: dict[int, SymbolId]
+    symbol_table: dict[SymbolId, Type]
+
 
 @dataclass(kw_only=True)
 class Context:
+    """Context of current statement
+
+    Internal symbols are identified by integer,
+    external symbols are identified by string (its name).
+    """
+
     # Mapping identifier to symbol in scope
-    scopes: ChainMap = field(default_factory=ChainMap)
-    side_table: dict[int, Union[int, bkit.Type]] = field(default_factory=dict)
+    scopes: ChainMap[str, SymbolId] = field(default_factory=ChainMap)
+    # Mapping identifier to symbol
+    resolution_table: dict[int, SymbolId] = field(default_factory=dict)
+    symbol_table: dict[SymbolId, Type] = field(default_factory=dict)
 
     @property
     def current_scope(self):
@@ -57,15 +72,15 @@ class Context:
         if symbol.name in self.current_scope:
             raise Redeclared(kind, symbol.name)
         self.scopes[symbol.name] = id(symbol)
-        self.side_table[id(symbol)] = typ
+        self.symbol_table[id(symbol)] = typ
 
     def get_type(self, ident: str) -> bkit.Type:
         ident_id = self.scopes[ident]
-        return self.side_table[ident_id]  # type: ignore
+        return self.symbol_table[ident_id]  # type: ignore
 
     def set_type(self, ident: str, type: bkit.Type) -> None:
         ident_id = self.scopes[ident]
-        self.side_table[ident_id] = type
+        self.symbol_table[ident_id] = type
 
 
 @dataclass(kw_only=True)
@@ -79,7 +94,7 @@ class FunctionContext(Context):
 
     @property
     def current_function_type(self) -> bkit.FuncType:
-        return self.side_table[id(self.current_function.name)]  # type: ignore
+        return cast(FuncType, self.symbol_table[id(self.current_function.name)])
 
     @property
     def is_in_loop(self) -> bool:
@@ -93,7 +108,9 @@ class FunctionContext(Context):
 
     def set_type(self, ident: str, type: bkit.Type) -> None:
         ident_id = self.scopes[ident]
-        self.side_table[ident_id] = type
+        if isinstance(ident_id, str):
+            raise ValueError("Cannot change type of external symbol")
+        self.symbol_table[ident_id] = type
         if ident_id in self._params_id:
             param_idx = self._params_id.index(ident_id)
             self.current_function_type.intype[param_idx] = type
@@ -102,8 +119,8 @@ class FunctionContext(Context):
         if symbol.name not in self.scopes:
             raise Undeclared(kind, symbol.name)
         decl_id = self.scopes[symbol.name]
-        self.side_table[id(symbol)] = decl_id
-        return self.side_table[decl_id]
+        self.resolution_table[id(symbol)] = decl_id
+        return self.symbol_table[decl_id]
 
     def is_current_function(self, ident: str):
         """Check if identifier resolve to current function"""
@@ -111,50 +128,26 @@ class FunctionContext(Context):
 
     def set_param_type(self, param_idx: int, typ: bkit.Type) -> None:
         param = self.current_function.param[param_idx].variable
-        self.side_table[id(param)] = typ
+        self.symbol_table[id(param)] = typ
 
 
 class StaticChecker(BaseVisitor):
-    BUILTIN_FUNCS = {
-        "int_of_float": FuncType([FLOAT_TYPE], INT_TYPE),
-        "float_to_int": FuncType([INT_TYPE], FLOAT_TYPE),
-        "int_of_string": FuncType([STRING_TYPE], INT_TYPE),
-        "string_of_int": FuncType([INT_TYPE], STRING_TYPE),
-        "float_of_string": FuncType([STRING_TYPE], FLOAT_TYPE),
-        "string_of_float": FuncType([FLOAT_TYPE], STRING_TYPE),
-        "bool_of_string": FuncType([STRING_TYPE], BOOL_TYPE),
-        "string_of_bool": FuncType([BOOL_TYPE], STRING_TYPE),
-        "read": FuncType([], STRING_TYPE),
-        "printLn": FuncType([], VOID_TYPE),
-        "print": FuncType([STRING_TYPE], VOID_TYPE),
-        "printStrLn": FuncType([STRING_TYPE], VOID_TYPE),
-    }
-
-    BUILTIN_OPS = {
-        ("+", "-", "*", "\\", "%"): OpType(INT_TYPE, INT_TYPE),
-        ("+.", "-.", "*.", "\\."): OpType(FLOAT_TYPE, FLOAT_TYPE),
-        ("!", "&&", "||"): OpType(BOOL_TYPE, BOOL_TYPE),
-        ("==", "!=", "<", ">", "<=", ">="): OpType(INT_TYPE, BOOL_TYPE),
-        ("=/=", "<.", ">.", "<=.", ">=."): OpType(FLOAT_TYPE, BOOL_TYPE),
-    }
 
     ExprParam = tuple[FunctionContext, Optional[bkit.Type]]
 
     def __init__(self, program: ast.Program):
         self.ast = program
-        # self.undecl_funcs: Dict[str, Union[CallExpr, CallStmt]] = {}
         self.cur_stmt: ast.Stmt
-        # self.logger = logging.getLogger(__name__)
-        self.builtin_ops = {
-            op: op_type
-            for op_list, op_type in self.BUILTIN_OPS.items()
-            for op in op_list
-        }
 
-    def check(self):
-        global_scope = {name: name for name in self.BUILTIN_FUNCS}
-        c = Context(scopes=ChainMap(global_scope), side_table=self.BUILTIN_FUNCS.copy())
-        return self.visit(self.ast, c)
+    def check(self) -> AnalysisResult:
+        global_scope = {name: name for name in BUILTIN_FUNCS}
+        scopes = ChainMap(global_scope)
+        symbol_table = BUILTIN_FUNCS.copy()
+        c = Context(scopes=scopes, symbol_table=symbol_table)  # type: ignore
+        self.visit(self.ast, c)
+        return AnalysisResult(
+            resolution_table=c.resolution_table, symbol_table=c.symbol_table
+        )
 
     @staticmethod
     def raise_type_mismatch(ast_: Union[ast.Expr, ast.Stmt]) -> None:
@@ -213,7 +206,7 @@ class StaticChecker(BaseVisitor):
         expr_type = self.visit(expr, (c, expected_type))
         return self.unify_type(expr_type, expected_type, error_ast)
 
-    def visitProgram(self, program: ast.Program, c: Context) -> dict:
+    def visitProgram(self, program: ast.Program, c: Context) -> None:
         func_defs = []
         for decl in program.decl:
             self.visit(decl, c)
@@ -226,7 +219,6 @@ class StaticChecker(BaseVisitor):
 
         for decl in func_defs:
             self._check_function_definition(decl, c)
-        return c.side_table
 
     def visitVarDecl(self, ast: ast.VarDecl, c: Context) -> None:
         c.declare_symbol(ast.variable, self._get_decl_type(ast), Variable())
@@ -250,7 +242,10 @@ class StaticChecker(BaseVisitor):
         func_type = cast(bkit.FuncType, c.get_type(symbol.name))
 
         c = FunctionContext(
-            scopes=c.scopes.new_child(), side_table=c.side_table, current_function=ast
+            scopes=c.scopes.new_child(),
+            resolution_table=c.resolution_table,
+            symbol_table=c.symbol_table,
+            current_function=ast,
         )
         for param, param_type in zip(ast.param, func_type.intype):
             symbol = param.variable
@@ -386,16 +381,16 @@ class StaticChecker(BaseVisitor):
 
     def visitBinaryOp(self, ast: ast.BinaryOp, c: ExprParam) -> Prim:
         env, _ = c
-        op_type = self.builtin_ops[ast.op]
-        self.unify_expr_type(ast.left, op_type.op_type, env, ast)
-        self.unify_expr_type(ast.right, op_type.op_type, env, ast)
-        return op_type.ret_type
+        operand_type, return_type = get_operator_type(ast.op)
+        self.unify_expr_type(ast.left, operand_type, env, ast)
+        self.unify_expr_type(ast.right, operand_type, env, ast)
+        return return_type
 
     def visitUnaryOp(self, ast: ast.UnaryOp, c: ExprParam) -> Prim:
         context, _ = c
-        op_type = self.builtin_ops[ast.op]
-        self.unify_expr_type(ast.body, op_type.op_type, context, ast)
-        return op_type.ret_type
+        operand_type, return_type = get_operator_type(ast.op)
+        self.unify_expr_type(ast.body, operand_type, context, ast)
+        return return_type
 
     def visitId(self, ast: ast.Id, c: ExprParam) -> Type:
         context, expected_type = c

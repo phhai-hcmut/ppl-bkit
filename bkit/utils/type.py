@@ -1,6 +1,5 @@
 from abc import ABC
 from dataclasses import dataclass
-from typing import List
 
 
 class Type(ABC):
@@ -55,38 +54,19 @@ class VoidType(Type):
 @dataclass
 class ArrayType(Type):
     elem_type: Prim
-    dim: List[int]
+    dim: list[int]
 
     def __bool__(self):
         return bool(self.elem_type)
 
 
 @dataclass
-class FuncType:
-    intype: List[Type]
+class FuncType(Type):
+    intype: list[Type]
     restype: Type
 
     def __bool__(self):
-        return not isinstance(self.intype, Unknown) and bool(self.restype)
-
-
-@dataclass
-class OpType:
-    """Operator type"""
-
-    op_type: Prim  # operand type
-    ret_type: Prim  # result type
-
-
-@dataclass
-class MType:
-    partype: List[Type]
-    rettype: Type
-
-
-@dataclass
-class ClassType(Type):
-    cname: str
+        return all(self.intype) and bool(self.restype)
 
 
 VOID_TYPE = VoidType()
