@@ -29,6 +29,8 @@ LLVM_UNARY_ARITH_INSTR = {
     "!": "not_",
 }
 
+TERMINATOR_STATEMENTS = (ast.Continue, ast.Break, ast.Return)
+
 
 @dataclass
 class SideTable:
@@ -233,6 +235,8 @@ class LLVMCodeGenerator(BaseVisitor):
 
         for stmt in stmts:
             self.visit(stmt, o)
+            if isinstance(stmt, TERMINATOR_STATEMENTS):
+                break
 
     def _gen_local_var(self, var_decl: ast.VarDecl, c: SideTable) -> None:
         ident = var_decl.variable
