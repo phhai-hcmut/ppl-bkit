@@ -25,6 +25,7 @@ from ..utils.type import (
 from ..utils.visitor import BaseVisitor
 from .exceptions import (
     Function,
+    FunctionNotReturn,
     Identifier,
     Kind,
     NoEntryPoint,
@@ -264,8 +265,11 @@ class StaticChecker(BaseVisitor):
 
         self.visit_stmt_list(*ast.body, c, False)
 
-        if not func_type.restype and not self._cur_func_has_return:
-            func_type.restype = VOID_TYPE
+        if not self._cur_func_has_return:
+            if not func_type.restype:
+                func_type.restype = VOID_TYPE
+            elif not isinstance(func_type.restype, VoidType):
+                raise FunctionNotReturn(ast.name.name)
 
     def visitAssign(self, ast: ast.Assign, c: FunctionContext) -> None:
         lhs_type = self.visit(ast.lhs, (c, None))
