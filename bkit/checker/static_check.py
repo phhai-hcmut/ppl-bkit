@@ -221,6 +221,15 @@ class StaticChecker(BaseVisitor):
         for decl in func_defs:
             self._check_function_definition(decl, c)
 
+        for decl in program.decl:
+            match decl:
+                case ast.VarDecl(variable=ast.Id(name)):
+                    name = name
+                case ast.FuncDecl(name=ast.Id(name)):
+                    name = name
+            if not c.get_type(name):
+                raise TypeCannotBeInferred(decl)  # type: ignore
+
     def visitVarDecl(self, ast: ast.VarDecl, c: Context) -> None:
         c.declare_symbol(ast.variable, self._get_decl_type(ast), Variable())
 
