@@ -92,7 +92,7 @@ class LLVMCodeGenerator(BaseVisitor):
         var = ir.GlobalVariable(module, llvm_type, llvm_name)
         var.linkage = "internal"
         if var_decl.varInit is not None:
-            var.initializer = self.visit(var_decl.varInit, None)
+            var.initializer = self.visit(var_decl.varInit, llvm_type)
         c.value_table[id(ident)] = var
 
     def visitFuncDecl(self, func_decl: ast.FuncDecl, o) -> None:
@@ -241,7 +241,7 @@ class LLVMCodeGenerator(BaseVisitor):
         llvm_value = self.builder.alloca(llvm_type, name=ident.name)
         c.value_table[id(ident)] = llvm_value
         if var_decl.varInit is not None:
-            initializer = self.visit(var_decl.varInit, c)
+            initializer = self.visit(var_decl.varInit, llvm_type)
             self.builder.store(initializer, llvm_value)
 
     ######################
@@ -329,5 +329,7 @@ class LLVMCodeGenerator(BaseVisitor):
         addr = self.builder.gep(llvm_value, gep_indices, inbounds=True)
         return addr
 
-    def visitArrayLiteral(self, literal: ast.ArrayLiteral, o: SideTable):
-        return
+    def visitArrayLiteral(
+        self, literal: ast.ArrayLiteral, t: ir.ArrayType
+    ) -> ir.Constant:
+        return t(self.visit(literal, t.element) for literal in literal.value)

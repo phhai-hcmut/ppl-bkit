@@ -47,5 +47,7 @@ def get_llvm_type(bkit_type: bkit.Type) -> ir.Type:
         case bkit.FuncType(intype=intype, restype=restype):
             args_type = [get_llvm_type(t) for t in intype]
             return ir.FunctionType(get_llvm_type(restype), args_type)
+        case bkit.ArrayType(dim=dim, elem_type=elem_type):
+            return reduce(ir.ArrayType, dim, get_llvm_type(elem_type))
         case _:
             return _LLVM_TYPES[type(bkit_type)]
