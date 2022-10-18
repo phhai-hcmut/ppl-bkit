@@ -35,7 +35,7 @@ TERMINATOR_STATEMENTS = (ast.Continue, ast.Break, ast.Return)
 @dataclass
 class SideTable:
     resolution_table: Mapping[int, SymbolId]
-    type_table: Mapping[SymbolId, ir.Type]
+    type_table: Mapping[SymbolId, bkit.Type]
     value_table: dict[SymbolId, ir.Value]
 
     def use_symbol(self, ident: ast.Id) -> ir.Value:
@@ -52,13 +52,9 @@ class LLVMCodeGenerator(BaseVisitor):
     def gen(self, program: ast.Program, side_table: AnalysisResult) -> ir.Module:
         self.continue_blocks = []
         self.break_blocks = []
-        type_table = {
-            id: get_llvm_type(bkit_type)
-            for id, bkit_type in side_table.symbol_table.items()
-        }
         c = SideTable(
             resolution_table=side_table.resolution_table,
-            type_table=type_table,
+            type_table=side_table.symbol_table,
             value_table={},
         )
         return self.visitProgram(program, c)
@@ -68,7 +64,8 @@ class LLVMCodeGenerator(BaseVisitor):
         module.triple = ""
 
         # Generate declaration for external functions
-        for symbol_id, llvm_type in c.type_table.items():
+        for symbol_id, bkit_type in c.type_table.items():
+            llvm_type = get_llvm_type(bkit_type)
             if isinstance(symbol_id, str):
                 c.value_table[symbol_id] = ir.Function(module, llvm_type, symbol_id)
 
@@ -91,7 +88,7 @@ class LLVMCodeGenerator(BaseVisitor):
         c, module = o
         ident = var_decl.variable
         llvm_name = ident.name
-        llvm_type = c.type_table[id(ident)]
+        llvm_type = get_llvm_type(c.type_table[id(ident)])
         var = ir.GlobalVariable(module, llvm_type, llvm_name)
         var.linkage = "internal"
         if var_decl.varInit is not None:
@@ -103,7 +100,7 @@ class LLVMCodeGenerator(BaseVisitor):
         ident = func_decl.name
         # bkit_type = side_table[id(ident)]
         # llvm_type = get_llvm_type(bkit_type)
-        llvm_type = side_table.type_table[id(ident)]
+        llvm_type = get_llvm_type(side_table.type_table[id(ident)])
         func = ir.Function(module, llvm_type, ident.name)
         func.linkage = "external" if ident.name == "main" else "internal"
         side_table.value_table[id(ident)] = func
@@ -240,7 +237,7 @@ class LLVMCodeGenerator(BaseVisitor):
 
     def _gen_local_var(self, var_decl: ast.VarDecl, c: SideTable) -> None:
         ident = var_decl.variable
-        llvm_type = c.type_table[id(ident)]
+        llvm_type = get_llvm_type(c.type_table[id(ident)])
         llvm_value = self.builder.alloca(llvm_type, name=ident.name)
         c.value_table[id(ident)] = llvm_value
         if var_decl.varInit is not None:
