@@ -48,8 +48,10 @@ class LLVMCodeGenerator(BaseVisitor):
         self.builder = ir.IRBuilder()
         self.continue_blocks: list[ir.Block]
         self.break_blocks: list[ir.Block]
+        self.string_counter: int
 
     def gen(self, program: ast.Program, side_table: AnalysisResult) -> ir.Module:
+        self.string_counter = 0
         self.continue_blocks = []
         self.break_blocks = []
         c = SideTable(
@@ -318,7 +320,9 @@ class LLVMCodeGenerator(BaseVisitor):
         # Null-terminated string
         string.append(0)
         llvm_type = ir.ArrayType(LLVM_BYTE_TYPE, len(string))
-        llvm_value = ir.GlobalVariable(self.builder.module, llvm_type, ".str")
+        llvm_name = ".str." + str(self.string_counter)
+        self.string_counter += 1
+        llvm_value = ir.GlobalVariable(self.builder.module, llvm_type, llvm_name)
         llvm_value.initializer = llvm_type(string)
         llvm_value.global_constant = True
         llvm_value.unnamed_addr = True
