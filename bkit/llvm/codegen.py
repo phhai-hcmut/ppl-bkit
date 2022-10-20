@@ -43,11 +43,27 @@ class SideTable:
         return self.value_table[symbol_id]
 
 
+@dataclass
+class LoopContext(SideTable):
+    continue_block: ir.Block
+    break_block: ir.Block
+
+    @classmethod
+    def from_parent(
+        cls, parent: SideTable, continue_block: ir.Block, break_block: ir.Block
+    ) -> "LoopContext":
+        return cls(
+            resolution_table=parent.resolution_table,
+            type_table=parent.type_table,
+            value_table=parent.value_table,
+            continue_block=continue_block,
+            break_block=break_block,
+        )
+
+
 class LLVMCodeGenerator(BaseVisitor):
     def __init__(self):
         self.builder = ir.IRBuilder()
-        self.continue_blocks: list[ir.Block]
-        self.break_blocks: list[ir.Block]
         self.string_counter: int
 
     def gen(self, program: ast.Program, side_table: AnalysisResult) -> ir.Module:
@@ -197,24 +213,19 @@ class LLVMCodeGenerator(BaseVisitor):
             self.builder.cbranch(cond_value, body_block, next_block)
 
         with self.builder.goto_block(body_block):
-            self.continue_blocks.append(cond_block)
-            self.break_blocks.append(next_block)
-
-            self._visit_stmt_list(*body, c)
+            loop_context = LoopContext.from_parent(c, cond_block, next_block)
+            self._visit_stmt_list(*body, loop_context)
             if not self.builder.block.is_terminated:
                 self.builder.branch(cond_block)
-
-            self.continue_blocks.pop()
-            self.break_blocks.pop()
 
         self.builder.branch(cond_block if check_cond_before else body_block)
         self.builder.position_at_end(next_block)
 
-    def visitBreak(self, ast: ast.Break, c: SideTable) -> None:
-        self.builder.branch(self.break_blocks[-1])
+    def visitBreak(self, ast: ast.Break, c: LoopContext) -> None:
+        self.builder.branch(c.break_block)
 
-    def visitContinue(self, ast: ast.Continue, c: SideTable) -> None:
-        self.builder.branch(self.continue_blocks[-1])
+    def visitContinue(self, ast: ast.Continue, c: LoopContext) -> None:
+        self.builder.branch(c.continue_block)
 
     def visitReturn(self, ast: ast.Return, c: SideTable) -> None:
         if ast.expr is not None:
