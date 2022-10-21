@@ -1,5 +1,5 @@
 __pycache__
 /test/codegen_out/
-/bkit/parser/antlr_build/BKIT*
+/bkit/parser/BKIT*.py
 # Java bytecode file
 *.class
