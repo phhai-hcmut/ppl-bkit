@@ -5,7 +5,18 @@ from .parser import BKITParser as P
 from .parser import BKITVisitor
 from .utils import ast
 
-__all__ = 'ASTGeneration'
+__all__ = "ASTGeneration"
+
+_STR_ESCAPE = {
+    r"\b": "\b",
+    r"\f": "\f",
+    r"\r": "\r",
+    r"\n": "\n",
+    r"\t": "\t",
+    r"\'": "'",
+    r"\\": "\\",
+    "'\"": '"',
+}
 
 
 class ASTGeneration(BKITVisitor):
@@ -196,6 +207,8 @@ class ASTGeneration(BKITVisitor):
 
     def visitString_literal(self, ctx: P.String_literalContext) -> ast.StringLiteral:
         text = ctx.STRING().getText()
+        for old, new in _STR_ESCAPE.items():
+            text = text.replace(old, new)
         return ast.StringLiteral(text)
 
     def visitTerminal(self, ctx) -> str:
