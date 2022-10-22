@@ -297,6 +297,7 @@ class LLVMCodeGenerator(BaseVisitor):
 
         with self.builder.goto_block(rhs_block):
             rhs = self.visit(expr.right, o)
+            self.builder.branch(new_block)
 
         self.builder.position_at_end(new_block)
         ret_val = self.builder.phi(get_llvm_type(bkit.BOOL_TYPE))
