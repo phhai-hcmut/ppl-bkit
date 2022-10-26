@@ -32,7 +32,12 @@ from .visitor import Visitor
 # ]
 
 
+@dataclass(frozen=True, kw_only=True)
 class AST(ABC):
+    # Line and column number start at 1
+    line: int = 0
+    column: int = 0
+
     @staticmethod
     def print_list(
         lst: List[AST],

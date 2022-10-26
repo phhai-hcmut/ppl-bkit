@@ -1,6 +1,9 @@
 from itertools import chain
 from typing import Iterator, List, Tuple
 
+from antlr4 import Token
+from antlr4.tree.Tree import TerminalNodeImpl
+
 from .parser import BKITParser as P
 from .parser import BKITVisitor
 from .utils import ast
@@ -72,16 +75,17 @@ class ASTGeneration(BKITVisitor):
         return list(var_decl_part), list(other_stmts)
 
     def visitReturn_stmt(self, ctx: P.Return_stmtContext) -> ast.Return:
+        tok: Token = ctx.RETURN().symbol
         return_expr = ctx.expr()
         if return_expr is None:
             expr = None
         else:
             expr = self.visit(return_expr)
-        return ast.Return(expr)
+        return ast.Return(expr, line=tok.line, column=tok.column)
 
     def visitCall_expr(self, ctx: P.Call_exprContext) -> ast.CallExpr:
         method, params = self.visitFunc_call(ctx.func_call())
-        return ast.CallExpr(method, params)
+        return ast.CallExpr(method, params, line=method.line, column=method.column)
 
     def visitFunc_call(self, ctx: P.Func_callContext) -> Tuple[ast.Id, List[ast.Expr]]:
         name = self.visitIdent(ctx.ident())
@@ -96,14 +100,17 @@ class ASTGeneration(BKITVisitor):
         return map(self.visit, ctx.expr())
 
     def visitAssign_stmt(self, ctx: P.Assign_stmtContext) -> ast.Assign:
+        # '=' token
+        tok = ctx.getChild(1).symbol
         lhs = self.visit(ctx.lhs())
         rhs = self.visit(ctx.expr())
-        return ast.Assign(lhs, rhs)
+        return ast.Assign(lhs, rhs, line=tok.line, column=tok.column)
 
     def visitWhile_stmt(self, ctx: P.While_stmtContext) -> ast.While:
+        tok = ctx.WHILE().symbol
         cond = self.visit(ctx.expr())
         body = self.visitStmt_list(ctx.stmt_list())
-        return ast.While(cond, body)
+        return ast.While(cond, body, line=tok.line, column=tok.column)
 
     def visitDo_while_stmt(self, ctx: P.Do_while_stmtContext) -> ast.Dowhile:
         body = self.visitStmt_list(ctx.stmt_list())
@@ -111,12 +118,21 @@ class ASTGeneration(BKITVisitor):
         return ast.Dowhile(body, cond)
 
     def visitFor_stmt(self, ctx: P.For_stmtContext) -> ast.For:
+        tok = ctx.FOR().symbol
         index = self.visitIdent(ctx.ident())
         init_expr = self.visit(ctx.expr(0))
         cond_expr = self.visit(ctx.expr(1))
         update_expr = self.visit(ctx.expr(2))
         loop = self.visitStmt_list(ctx.stmt_list())
-        return ast.For(index, init_expr, cond_expr, update_expr, loop)
+        return ast.For(
+            index,
+            init_expr,
+            cond_expr,
+            update_expr,
+            loop,
+            line=tok.line,
+            column=tok.column,
+        )
 
     def visitIf_stmt(self, ctx: P.If_stmtContext) -> ast.If:
         if_then_stmts = map(self.visitIf_then_stmt, ctx.if_then_stmt())
@@ -142,30 +158,37 @@ class ASTGeneration(BKITVisitor):
         return ast.CallStmt(method, params)
 
     def visitBreak_stmt(self, ctx: P.Break_stmtContext) -> ast.Break:
-        return ast.Break()
+        tok: Token = ctx.BREAK().symbol
+        return ast.Break(line=tok.line, column=tok.column)
 
     def visitCont_stmt(self, ctx: P.Cont_stmtContext) -> ast.Continue:
-        return ast.Continue()
+        tok: Token = ctx.CONTINUE().symbol
+        return ast.Continue(line=tok.line, column=tok.column)
 
     def visitRel_expr(self, ctx: P.Rel_exprContext) -> ast.BinaryOp:
         return self.visitBinary_expr(ctx)
 
     def visitBinary_expr(self, ctx: P.Binary_exprContext) -> ast.BinaryOp:
         left = self.visit(ctx.exprp(0))
-        op = self.visit(ctx.getChild(1))
+        op_tok: Token = self.visit(ctx.getChild(1))
         right = self.visit(ctx.exprp(1))
-        return ast.BinaryOp(op, left, right)
+        return ast.BinaryOp(
+            op_tok.text, left, right, line=op_tok.line, column=op_tok.column + 1
+        )
 
     def visitPrefix_expr(self, ctx: P.Prefix_exprContext) -> ast.UnaryOp:
-        op = self.visit(ctx.prefix_op())
+        op_tok: Token = self.visit(ctx.prefix_op())
         body = self.visit(ctx.exprp())
-        return ast.UnaryOp(op, body)
+        return ast.UnaryOp(
+            op_tok.text, body, line=op_tok.line, column=op_tok.column + 1
+        )
 
     def visitParen_expr(self, ctx: P.Paren_exprContext) -> ast.Expr:
         return self.visit(ctx.expr())
 
     def visitIdent(self, ctx: P.IdentContext) -> ast.Id:
-        return ast.Id(ctx.ID().getText())
+        tok: Token = ctx.ID().symbol
+        return ast.Id(tok.text, line=tok.line, column=tok.column + 1)
 
     def visitElem_expr(self, ctx: P.Elem_exprContext) -> ast.ArrayCell:
         arr = self.visit(ctx.primary_expr())
@@ -211,5 +234,5 @@ class ASTGeneration(BKITVisitor):
             text = text.replace(old, new)
         return ast.StringLiteral(text)
 
-    def visitTerminal(self, ctx) -> str:
-        return ctx.getText()
+    def visitTerminal(self, ctx: TerminalNodeImpl) -> Token:
+        return ctx.symbol
