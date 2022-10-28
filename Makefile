@@ -1,16 +1,15 @@
-ANTLR_CMD = java org.antlr.v4.Tool -no-listener -visitor -Xexact-output-dir
-ANTLR_BUILD = bkit/parser/antlr_build/BKITParser.py
+ANTLR_BUILD = bkit/parser/BKITParser.py
 
 all: gen
 
-# gen: ${ANTLR_BUILD}
+gen: ${ANTLR_BUILD}
 
-# ${ANTLR_BUILD}: bkit/parser/BKIT.g4
-gen: bkit/parser/BKIT.g4
-	${ANTLR_CMD} -o bkit/parser/antlr_build/ $<
+${ANTLR_BUILD}: grammar/BKIT.g4
+	antlr -no-listener -visitor -Xexact-output-dir -o bkit/parser/ $<
+	rm -f bkit/parser/*.interp bkit/parser/*.tokens
 
 clean:
-	rm -f bkit/parser/antlr_build/BKIT* lib/*.class
+	rm -f bkit/parser/BKIT*.py
 
 test_lexer: ${ANTLR_BUILD}
 	@python -m unittest test.test_lexer
