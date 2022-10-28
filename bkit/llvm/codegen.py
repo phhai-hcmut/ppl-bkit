@@ -321,7 +321,7 @@ class LLVMCodeGenerator(BaseVisitor):
         self.builder.branch(stmt_block)
 
         self.builder.position_at_end(stmt_block)
-        self._visit_stmt_list(*func_decl.body, c)
+        self._visit_stmt_list(*func_decl.body, c, new_scope=False)
 
         last_block = self.builder.block
         if not last_block.is_terminated:
@@ -429,7 +429,14 @@ class LLVMCodeGenerator(BaseVisitor):
         var_decls: Iterable[ast.VarDecl],
         stmts: Iterable[ast.Stmt],
         o: SideTable,
+        new_scope: bool = True,
     ) -> None:
+        if new_scope:
+            di_scope = self._add_debug_info('DILexicalBlock', {
+                'scope': o.scope,
+                'file': self._file,
+                }, is_distinct=True)
+            o = replace(o, scope=di_scope)
         with self.builder.goto_entry_block():
             for var_decl in var_decls:
                 self._gen_local_var(var_decl, o)
