@@ -2,5 +2,5 @@
 profile = "black"
 
 [[tool.mypy.overrides]]
-module = ["llvmlite.*"]
+module = ["llvmlite.*", "antlr4", "antlr4.*"]
 ignore_missing_imports = true
