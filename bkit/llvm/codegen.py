@@ -373,6 +373,7 @@ class LLVMCodeGenerator(BaseVisitor):
         cond_block, body_block, next_block = self._gen_loop(
             for_stmt.expr2, for_stmt.loop, c
         )
+        self.builder.branch(cond_block)
         with self.builder.goto_block(body_block):
             self.visit(
                 ast.Assign(loop_var, ast.BinaryOp("+", loop_var, for_stmt.expr3)), c
