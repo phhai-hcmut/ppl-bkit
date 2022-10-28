@@ -360,8 +360,9 @@ class LLVMCodeGenerator(BaseVisitor):
                     self.visitIf(new_if, c)
 
     def visitFor(self, for_stmt: ast.For, c: FuncContext) -> None:
+        di_loc = self._add_di_location(for_stmt, c)
         loop_var = for_stmt.idx1
-        self.visit(ast.Assign(loop_var, for_stmt.expr1), c)
+        self.visit(ast.Assign(loop_var, for_stmt.expr1), c).set_metadata("dbg", di_loc)
 
         cond_block, body_block, next_block = self._gen_loop(
             for_stmt.expr2, for_stmt.loop, c
@@ -389,19 +390,22 @@ class LLVMCodeGenerator(BaseVisitor):
         body: ast.StmtList,
         c: FuncContext,
     ) -> tuple[ir.Block, ir.Block, ir.Block]:
+        di_loc = self._add_di_location(cond, c)
         cond_block = self.builder.append_basic_block()
         body_block = self.builder.append_basic_block()
         next_block = self.builder.append_basic_block()
 
         with self.builder.goto_block(cond_block):
             cond_value = self.visit(cond, c)
-            self.builder.cbranch(cond_value, body_block, next_block)
+            self.builder.cbranch(cond_value, body_block, next_block).set_metadata(
+                "dbg", di_loc
+            )
 
         with self.builder.goto_block(body_block):
             loop_context = LoopContext.from_parent(c, cond_block, next_block)
             self._visit_stmt_list(*body, loop_context)
             if not self.builder.block.is_terminated:
-                self.builder.branch(cond_block)
+                self.builder.branch(cond_block).set_metadata("dbg", di_loc)
 
         return cond_block, body_block, next_block
 
