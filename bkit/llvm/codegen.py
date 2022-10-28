@@ -55,19 +55,25 @@ class SideTable:
 
 
 @dataclass
-class LoopContext(SideTable):
+class FuncContext(SideTable):
+    params: list[int]
+
+
+@dataclass
+class LoopContext(FuncContext):
     continue_block: ir.Block
     break_block: ir.Block
 
     @classmethod
     def from_parent(
-        cls, parent: SideTable, continue_block: ir.Block, break_block: ir.Block
+        cls, parent: FuncContext, continue_block: ir.Block, break_block: ir.Block
     ) -> "LoopContext":
         return cls(
             resolution_table=parent.resolution_table,
             type_table=parent.type_table,
             value_table=parent.value_table,
             scope=parent.scope,
+            params=parent.params,
             continue_block=continue_block,
             break_block=break_block,
         )
@@ -292,36 +298,23 @@ class LLVMCodeGenerator(BaseVisitor):
             is_distinct=True,
         )
         func_sym.set_metadata("dbg", di_subprogram)
-        c = replace(c, scope=di_subprogram)
+        c = FuncContext(
+            resolution_table=c.resolution_table,
+            type_table=c.type_table,
+            value_table=c.value_table,
+            scope=di_subprogram,
+            params=[id(param.variable) for param in func_decl.param],
+        )
 
         entry_block = func_sym.append_basic_block("var_decl")
         stmt_block = func_sym.append_basic_block("stmt")
 
         self.builder.position_at_end(entry_block)
-        for param, param_sym in zip(func_decl.param, func_sym.args):
-            ident = param.variable
-            param_sym.name = "param." + ident.name
-            c.value_table[id(ident)] = param_sym
-            bkit_type = c.type_table[id(ident)]
-
-            di_local_var = self._add_debug_info(
-                "DILocalVariable",
-                {
-                    "name": ident.name,
-                    "scope": c.scope,
-                    "line": ident.line,
-                    "file": self._file,
-                    "type": self._get_di_type(bkit_type),
-                },
-            )
-            self.builder.call(
-                c.value_table["llvm.dbg.value"],
-                (param_sym, di_local_var, self._add_debug_info("DIExpression", {})),
-            ).set_metadata("dbg", self._add_di_location(ident, c))
         self.builder.branch(stmt_block)
 
         self.builder.position_at_end(stmt_block)
-        self._visit_stmt_list(*func_decl.body, c, new_scope=False)
+        var_decls, stmts = func_decl.body
+        self._visit_stmt_list(func_decl.param + var_decls, stmts, c, new_scope=False)
 
         last_block = self.builder.block
         if not last_block.is_terminated:
@@ -352,7 +345,7 @@ class LLVMCodeGenerator(BaseVisitor):
     def visitCallStmt(self, call_stmt: ast.CallStmt, c: SideTable) -> ir.Instruction:
         return self.visitCallExpr(cast(ast.CallExpr, call_stmt), c)
 
-    def visitIf(self, if_stmt: ast.If, c: SideTable) -> None:
+    def visitIf(self, if_stmt: ast.If, c: FuncContext) -> None:
         first_if = if_stmt.ifthenStmt[0]
         cond, var_decls, stmts = first_if
         pred = self.visit(cond, c)
@@ -366,7 +359,7 @@ class LLVMCodeGenerator(BaseVisitor):
                     new_if = replace(if_stmt, ifthenStmt=if_stmt.ifthenStmt[1:])
                     self.visitIf(new_if, c)
 
-    def visitFor(self, for_stmt: ast.For, c: SideTable) -> None:
+    def visitFor(self, for_stmt: ast.For, c: FuncContext) -> None:
         loop_var = for_stmt.idx1
         self.visit(ast.Assign(loop_var, for_stmt.expr1), c)
 
@@ -380,12 +373,12 @@ class LLVMCodeGenerator(BaseVisitor):
             )
         self.builder.position_at_end(next_block)
 
-    def visitWhile(self, ast: ast.While, c: SideTable) -> None:
+    def visitWhile(self, ast: ast.While, c: FuncContext) -> None:
         cond_block, body_block, next_block = self._gen_loop(ast.exp, ast.sl, c)
         self.builder.branch(cond_block)
         self.builder.position_at_end(next_block)
 
-    def visitDowhile(self, ast: ast.Dowhile, c: SideTable) -> None:
+    def visitDowhile(self, ast: ast.Dowhile, c: FuncContext) -> None:
         cond_block, body_block, next_block = self._gen_loop(ast.exp, ast.sl, c)
         self.builder.branch(body_block)
         self.builder.position_at_end(next_block)
@@ -394,7 +387,7 @@ class LLVMCodeGenerator(BaseVisitor):
         self,
         cond: ast.Expr,
         body: ast.StmtList,
-        c: SideTable,
+        c: FuncContext,
     ) -> tuple[ir.Block, ir.Block, ir.Block]:
         cond_block = self.builder.append_basic_block()
         body_block = self.builder.append_basic_block()
@@ -428,14 +421,18 @@ class LLVMCodeGenerator(BaseVisitor):
         self,
         var_decls: Iterable[ast.VarDecl],
         stmts: Iterable[ast.Stmt],
-        o: SideTable,
+        o: FuncContext,
         new_scope: bool = True,
     ) -> None:
         if new_scope:
-            di_scope = self._add_debug_info('DILexicalBlock', {
-                'scope': o.scope,
-                'file': self._file,
-                }, is_distinct=True)
+            di_scope = self._add_debug_info(
+                "DILexicalBlock",
+                {
+                    "scope": o.scope,
+                    "file": self._file,
+                },
+                is_distinct=True,
+            )
             o = replace(o, scope=di_scope)
         with self.builder.goto_entry_block():
             for var_decl in var_decls:
@@ -446,7 +443,7 @@ class LLVMCodeGenerator(BaseVisitor):
             if isinstance(stmt, TERMINATOR_STATEMENTS):
                 break
 
-    def _gen_local_var(self, var_decl: ast.VarDecl, c: SideTable) -> None:
+    def _gen_local_var(self, var_decl: ast.VarDecl, c: FuncContext) -> None:
         ident = var_decl.variable
         di_loc = self._add_di_location(ident, c)
         bkit_type = c.type_table[id(ident)]
@@ -460,6 +457,10 @@ class LLVMCodeGenerator(BaseVisitor):
             llvm_value = self.builder.alloca(llvm_type, name=ident.name)
         c.value_table[id(ident)] = llvm_value
 
+        if id(ident) in c.params:
+            param_index = c.params.index(id(ident)) + 1
+        else:
+            param_index = 0
         di_local_var = self._add_debug_info(
             "DILocalVariable",
             {
@@ -468,6 +469,7 @@ class LLVMCodeGenerator(BaseVisitor):
                 "line": ident.line,
                 "file": self._file,
                 "type": self._get_di_type(bkit_type),
+                "arg": param_index,
             },
         )
         dbg_declare = self.builder.call(
