@@ -235,7 +235,15 @@ class StaticChecker(BaseVisitor):
         c.declare_symbol(ast.variable, self._get_decl_type(ast), Variable())
 
     def visitFuncDecl(self, ast: ast.FuncDecl, c: Context) -> None:
-        func_type = bkit.FuncType([bkit.Unknown()] * len(ast.param), None)  # type: ignore
+        param_types = []
+        for param in ast.param:
+            typ: bkit.Type
+            if param.varDimen:
+                typ = bkit.ArrayType(Unknown(True), param.varDimen)  # type: ignore
+            else:
+                typ = bkit.Unknown(True)
+            param_types.append(typ)
+        func_type = bkit.FuncType(param_types, None)  # type: ignore
         c.declare_symbol(ast.name, func_type, Function())
 
     def _get_decl_type(self, ast: ast.VarDecl) -> bkit.Type:
