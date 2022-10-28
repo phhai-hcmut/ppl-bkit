@@ -1,3 +1,5 @@
+from functools import reduce
+
 from llvmlite import ir
 
 from bkit.utils import type as bkit
@@ -33,6 +35,7 @@ def is_block_reachable(func: ir.Function, block: ir.Block) -> bool:
 
 
 LLVM_BYTE_TYPE = ir.IntType(8)
+LLVM_INT_TYPE = ir.IntType(32)
 _LLVM_TYPES = {
     bkit.VoidType: ir.VoidType(),
     bkit.BoolType: ir.IntType(1),
@@ -48,6 +51,6 @@ def get_llvm_type(bkit_type: bkit.Type) -> ir.Type:
             args_type = [get_llvm_type(t) for t in intype]
             return ir.FunctionType(get_llvm_type(restype), args_type)
         case bkit.ArrayType(dim=dim, elem_type=elem_type):
-            return reduce(ir.ArrayType, dim, get_llvm_type(elem_type))
+            return reduce(ir.ArrayType, dim, get_llvm_type(elem_type)).as_pointer()
         case _:
             return _LLVM_TYPES[type(bkit_type)]
