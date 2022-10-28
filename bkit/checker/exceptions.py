@@ -1,6 +1,6 @@
-# update: 6/11/2020
 from abc import ABC
 from dataclasses import dataclass
+
 from ..utils.ast import ArrayCell, ArrayLiteral, Expr, Stmt
 
 
@@ -107,22 +107,6 @@ class FunctionNotReturn(StaticError):
 
     def __str__(self):
         return "Function Not Return: " + self.name
-
-
-@dataclass
-class UnreachableFunction(StaticError):
-    name: str
-
-    def __str__(self):
-        return "Unreachable Function: " + self.name
-
-
-@dataclass
-class UnreachableStatement(StaticError):
-    stmt: Stmt
-
-    def __str__(self):
-        return "Unreachable Statement: " + str(self.stmt)
 
 
 @dataclass
